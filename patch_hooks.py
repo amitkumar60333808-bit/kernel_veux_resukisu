@@ -188,33 +188,19 @@ print("  kernel/reboot.c DONE")
 
 print("\nAll manual hooks applied successfully!")
 
-# ===== Fix ReSukiSU taskstats.c patch =====
-print("\nFixing ReSukiSU patches...")
+# ===== Fix bare #elif in taskstats.c (clang rejects, GCC accepts) =====
+print("\nFixing bare #elif in taskstats.c...")
 try:
     with open("kernel/taskstats.c", "r") as f:
         content = f.read()
-    lines = content.split("\n")
-    fixed = False
-    for i, line in enumerate(lines):
-        stripped = line.strip()
-        if stripped.startswith("#elif") and i > 0:
-            found_if = False
-            for j in range(i - 1, -1, -1):
-                s = lines[j].strip()
-                if s.startswith("#if"):
-                    found_if = True
-                    break
-                elif s.startswith("#elif") or s.startswith("#else") or s.startswith("#endif"):
-                    break
-            if not found_if:
-                print(f"  Found orphan #elif at line {i + 1}, converting to #if")
-                lines[i] = line.replace("#elif", "#if", 1)
-                fixed = True
-    if fixed:
+    # Replace bare #elif (no condition) with #else
+    import re
+    new_content = re.sub(r'^(\s*)#elif\s*$', r'\1#else', content, flags=re.MULTILINE)
+    if new_content != content:
         with open("kernel/taskstats.c", "w") as f:
-            f.write("\n".join(lines))
-        print("  Fixed taskstats.c")
+            f.write(new_content)
+        print("  Fixed bare #elif -> #else in taskstats.c")
     else:
-        print("  taskstats.c: no orphan #elif found")
+        print("  taskstats.c: no bare #elif found")
 except Exception as e:
     print(f"  taskstats.c fix skipped: {e}")
