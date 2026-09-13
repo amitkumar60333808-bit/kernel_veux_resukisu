@@ -26,7 +26,7 @@ def run(cmd, cwd=None, check=True):
     return result
 
 def main():
-    kernel_dir = os.environ.get("KERNEL_DIR", "kernel")
+    kernel_dir = os.environ.get("KERNEL_DIR", ".")
     
     print("=== Step 1: Clone susfs4ksu ===")
     if not os.path.exists(SUSFS_REPO):
