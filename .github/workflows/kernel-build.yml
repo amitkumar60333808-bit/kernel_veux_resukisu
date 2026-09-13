@@ -30,15 +30,16 @@ jobs:
           echo "=== Toolchain contents ==="
           ls /tmp/toolchain/
           echo "=== clang binary location ==="
-          ls -la /tmp/toolchain/bin/clang 2>/dev/null || ls -la /tmp/toolchain/clang 2>/dev/null || find /tmp/toolchain -name "clang" -maxdepth 3 2>/dev/null | head -5
-          # Setup PATH: main bin + aarch64 cross binutils
+          ls -la /tmp/toolchain/bin/clang 2>/dev/null || find /tmp/toolchain -name "clang" -maxdepth 3 2>/dev/null | head -5
+          # IMPORTANT: only put clang's bin dir on PATH.
+          # Adding the cross binutils dirs (aarch64-linux-gnu/bin) breaks HOSTCC (fixdep)
+          # because the kernel's host tools pick up the ARM64 cross 'as'.
           echo "/tmp/toolchain/bin" >> $GITHUB_PATH
-          echo "/tmp/toolchain/aarch64-linux-gnu/bin" >> $GITHUB_PATH
-          echo "/tmp/toolchain/arm-linux-gnueabi/bin" >> $GITHUB_PATH
           echo "TOOLCHAIN_DIR=/tmp/toolchain" >> $GITHUB_ENV
           echo "=== Verify ==="
           which clang
           clang --version | head -3
+          ls /tmp/toolchain/bin/ | grep -E "^(clang|lld|llvm-(ar|nm|objcopy|objdump|strip))$" | head
 
       - name: Setup ReSukiSU
         run: |
@@ -60,8 +61,8 @@ jobs:
       - name: Configure kernel
         run: |
           cd kernel
-          echo "=== Using source defconfig + vendor fragment ==="
-          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- O=out defconfig
+          echo "=== Using source defconfig + vendor fragment (HOSTCC=gcc) ==="
+          make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out defconfig
           cat arch/arm64/configs/vendor/holi_QGKI.config >> out/.config
           if [ -f arch/arm64/configs/vendor/susfs_fragment.config ]; then
             cat arch/arm64/configs/vendor/susfs_fragment.config >> out/.config
@@ -71,12 +72,12 @@ jobs:
           echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
           echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
           echo "=== Resolve deps (pass 1) ==="
-          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- O=out olddefconfig
+          make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out olddefconfig
           echo "=== Verify critical configs ==="
           grep -E "^CONFIG_QCOM_SCM=|^CONFIG_QCOM_KGSL=|^CONFIG_SYNC_FILE=|^CONFIG_SECURITY_SELINUX=|^CONFIG_KSU=|^CONFIG_DRM=" out/.config || echo "WARN: some configs missing"
           echo "=== Build scripts/prepare ==="
-          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- O=out prepare -j$(nproc)
-          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- O=out scripts -j$(nproc)
+          make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out prepare -j$(nproc)
+          make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out scripts -j$(nproc)
 
       - name: Build kernel
         run: |
@@ -84,7 +85,7 @@ jobs:
           echo "=== Compiler ==="
           clang --version | head -3
           set +e
-          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- O=out KCFLAGS="-w" -j$(nproc) 2>&1 | tee build.log
+          make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out KCFLAGS="-w" -j$(nproc) 2>&1 | tee build.log
           BUILD_RC=${PIPESTATUS[0]}
           echo "Build exit code: $BUILD_RC"
           if [ $BUILD_RC -ne 0 ]; then
