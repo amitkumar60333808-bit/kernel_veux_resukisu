@@ -25,6 +25,12 @@ jobs:
           cd kernel
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
 
+      - name: Apply SUSFS patches
+        run: |
+          cd kernel
+          curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/apply_susfs.py" -o apply_susfs.py
+          python3 apply_susfs.py
+
       - name: Apply manual hooks
         run: |
           cd kernel
@@ -39,6 +45,10 @@ jobs:
           ls arch/arm64/configs/vendor/ | grep -i holi
           make ARCH=arm64 LLVM=1 O=out defconfig
           cat arch/arm64/configs/vendor/holi_QGKI.config >> out/.config
+          if [ -f arch/arm64/configs/vendor/susfs_fragment.config ]; then
+            cat arch/arm64/configs/vendor/susfs_fragment.config >> out/.config
+            echo "  Added SUSFS config fragment"
+          fi
           echo "CONFIG_KSU=y" >> out/.config
           echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
           echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
