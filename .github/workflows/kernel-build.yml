@@ -118,3 +118,4 @@ jobs:
             Flash: Extract boot.img, fastboot flash boot boot.img
             Recovery: fastboot flash boot stock_boot.img
           make_latest: true
+# comment
