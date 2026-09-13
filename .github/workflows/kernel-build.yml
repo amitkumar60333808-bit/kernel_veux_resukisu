@@ -1,5 +1,5 @@
 name: Build ReSukiSU Kernel for veux (SM6375)
-# trigger: minstrel fix + config deps
+# trigger: minstrel inline fix + config deps v2
 
 on:
   workflow_dispatch:

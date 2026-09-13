@@ -233,22 +233,32 @@ except Exception as e:
     print(f"  qrtr/tun.c fix skipped: {e}")
 
 # Fix 4: minstrel duplicate symbols
-# Original: mac80211 compiled minstrel objects AND minstrel compiled as separate .ko = duplicate
-# Wrong fix (previous): removed minstrel from mac80211 → mac80211.ko can't find minstrel_init/exit
-# Correct fix: keep minstrel in mac80211, remove the separate module build
+# The Makefile defines rc80211_minstrel-y (Kbuild auto-builds separate .ko)
+# AND mac80211 adds the same objects via mac80211-$(CONFIG_...) += $(rc80211_minstrel-y)
+# This causes duplicate symbols at link time.
+# Fix: remove rc80211_minstrel-y definition, inline objects directly into mac80211
 try:
     with open("net/mac80211/Makefile", "r") as f:
         content = f.read()
     import re
-    # Comment out the separate minstrel module build, keep objects in mac80211
-    pattern = r'obj-\$\(CONFIG_MAC80211_RC_MINSTREL\)\s*\+=\s*\$\(basename \$\(rc80211_minstrel-y\)\)\.o'
-    if re.search(pattern, content):
-        content = re.sub(pattern, r'# minstrel kept in mac80211 (no separate module)\n# \0', content)
-        with open("net/mac80211/Makefile", "w") as f:
-            f.write(content)
-        print("  Fixed minstrel: disabled separate module, kept in mac80211")
-    else:
-        print("  minstrel: separate module build line not found (may already be fixed)")
+    # Remove rc80211_minstrel-y := ... block (multi-line)
+    content = re.sub(
+        r'rc80211_minstrel-y\s*:=\s*\\?\n?\s*rc80211_minstrel\.o\s*\\?\n?\s*rc80211_minstrel_ht\.o\$?\n?',
+        '', content
+    )
+    # Remove rc80211_minstrel-$(CONFIG_MAC80211_DEBUGFS) block
+    content = re.sub(
+        r'rc80211_minstrel-\$\(CONFIG_MAC80211_DEBUGFS\)\s*\+=\s*\\?\n?\s*rc80211_minstrel_debugfs\.o\s*\\?\n?\s*rc80211_minstrel_ht_debugfs\.o\$?\n?',
+        '', content
+    )
+    # Replace the mac80211 reference with inline objects
+    content = content.replace(
+        'mac80211-$(CONFIG_MAC80211_RC_MINSTREL) += $(rc80211_minstrel-y)',
+        'mac80211-$(CONFIG_MAC80211_RC_MINSTREL) += rc80211_minstrel.o rc80211_minstrel_ht.o'
+    )
+    with open("net/mac80211/Makefile", "w") as f:
+        f.write(content)
+    print("  Fixed minstrel: removed composite variable, inlined objects into mac80211")
 except Exception as e:
     print(f"  minstrel fix: {e}")
 
