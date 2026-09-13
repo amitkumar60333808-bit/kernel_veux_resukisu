@@ -64,10 +64,16 @@ jobs:
           echo "CONFIG_SECURITY_SELINUX_AVC_STATS=y" >> out/.config
           echo "CONFIG_SECURITY_SELINUX_CHECKREQPROT_VALUE=0" >> out/.config
           echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
+          echo "CONFIG_ARM_SCMI_PROTOCOL=y" >> out/.config
+          echo "CONFIG_QTI_SCMI_MEMLAT_PROTOCOL=y" >> out/.config
+          echo "CONFIG_QTI_SCMI_PLH_PROTOCOL=y" >> out/.config
+          echo "CONFIG_QTI_PLH_SCMI_CLIENT=y" >> out/.config
+          echo "# CONFIG_STMMAC_ETH is not set" >> out/.config
           make ARCH=arm64 LLVM=1 O=out olddefconfig
           echo "# CONFIG_QCOM_GCC_QCS404 is not set" >> out/.config
           echo "# CONFIG_QRTR_TUN is not set" >> out/.config
           echo "# CONFIG_QCOM_SCM is not set" >> out/.config
+          echo "# CONFIG_STMMAC_ETH is not set" >> out/.config
           make ARCH=arm64 LLVM=1 O=out olddefconfig
           make ARCH=arm64 LLVM=1 O=out prepare -j$(nproc)
           make ARCH=arm64 LLVM=1 O=out scripts -j$(nproc)
@@ -163,4 +169,3 @@ jobs:
             Flash: Extract boot.img, fastboot flash boot boot.img
             Recovery: fastboot flash boot stock_boot.img
           make_latest: true
-

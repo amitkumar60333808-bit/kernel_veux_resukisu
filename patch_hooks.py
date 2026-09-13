@@ -277,4 +277,19 @@ try:
 except Exception as e:
     print(f"  qcom_scm.c fix: {e}")
 
+# Fix 6: stmmac_main.c missing prev_len/sec_len declarations (stock config doesn't use stmmac)
+try:
+    with open("drivers/net/ethernet/stmicro/stmmac/stmmac_main.c", "r") as f:
+        content = f.read()
+    marker = "len += buf2_len;"
+    if "unsigned int buf_len = len - prev_len;" in content and marker in content:
+        idx = content.index(marker) + len(marker)
+        decl = "\n\t\tunsigned int prev_len = len - buf1_len - buf2_len;\n\t\tunsigned int sec_len = buf2_len;"
+        content = content[:idx] + decl + content[idx:]
+        with open("drivers/net/ethernet/stmicro/stmmac/stmmac_main.c", "w") as f:
+            f.write(content)
+        print("  Fixed stmmac_main.c: added prev_len/sec_len declarations after buf2_len calc")
+except Exception as e:
+    print(f"  stmmac_main.c fix skipped: {e}")
+
 print("  Done fixing compilation errors")
