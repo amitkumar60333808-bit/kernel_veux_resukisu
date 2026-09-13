@@ -2,11 +2,6 @@ name: Build ReSukiSU Kernel for veux (SM6375)
 
 on:
   workflow_dispatch:
-    inputs:
-      ksu-url:
-        description: 'ReSukiSU fork URL'
-        required: false
-        default: 'https://github.com/ReSukiSU/ReSukiSU'
 
 permissions:
   contents: write
@@ -16,21 +11,98 @@ jobs:
     name: Build ReSukiSU Kernel
     runs-on: ubuntu-22.04
     steps:
-      - name: Build
-        uses: dabao1955/kernel_build_action@main
+      - name: Install dependencies
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip python3 python3-pip
+
+      - name: Clone kernel source
+        run: |
+          git clone --depth=1 --branch 14.0 https://github.com/crdroidandroid/android_kernel_xiaomi_sm6375.git kernel
+
+      - name: Setup ReSukiSU
+        working-directory: kernel
+        run: |
+          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+
+      - name: Download clang toolchain
+        run: |
+          curl -sL https://github.com/nicman23/AnyKernel3/raw/master/clang-release.tar.zst -o clang.tar.zst
+          tar -I zstd -xf clang.tar.zst -C /opt
+          echo "CC=clang" >> $GITHUB_ENV
+          echo "CLANG_PATH=/opt/clang-r416183b1/bin" >> $GITHUB_ENV
+
+      - name: Download GCC toolchain
+        run: |
+          mkdir -p /opt/gcc
+          curl -sL https://android.googlesource.com/platform/prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/+archive/refs/heads/android12-release.tar.gz | tar -xz -C /opt/gcc
+          echo "CROSS_COMPILE=/opt/gcc/bin/aarch64-linux-android-" >> $GITHUB_ENV
+
+      - name: Build kernel
+        working-directory: kernel
+        run: |
+          export ARCH=arm64
+          export SUBARCH=arm64
+          export PATH=$CLANG_PATH:$PATH
+          export CROSS_COMPILE=$CROSS_COMPILE
+          export CROSS_COMPILE_COMPAT=arm-linux-androideabi-
+          export CROSS_COMPILE_ARM32=arm-linux-androideabi-
+          export CC=clang
+          export CLANG_TRIPLE=aarch64-linux-gnu-
+          
+          # Merge defconfig with vendor config
+          make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- vendor/holi_QGKI.config
+          cat defconfig vendor/holi_QGKI.config > out/.config
+          
+          # Enable ReSukiSU
+          scripts/config --file out/.config --enable CONFIG_KSU
+          scripts/config --file out/.config --enable CONFIG_KSU_MANUAL_HOOK
+          scripts/config --file out/.config --enable CONFIG_KSU_SUSFS
+          
+          # Build
+          make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- -j$(nproc) olddefconfig
+          make O=out ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- -j$(nproc) 2>&1 | tee build.log
+          
+          # Check for Image
+          ls -la out/arch/arm64/boot/Image
+
+      - name: Package AnyKernel3
+        run: |
+          git clone --depth=1 https://github.com/nicman23/AnyKernel3.git
+          cd AnyKernel3
+          rm -f *.zip
+          cp ../kernel/out/arch/arm64/boot/Image Image
+          sed -i 's/kernel.string=.*/kernel.string=ReSukiSU-veux/' anykernel.sh
+          sed -i 's/do.devicecheck=.*/do.devicecheck=1/' anykernel.sh
+          sed -i 's/device.name1=.*/device.name1=veux/' anykernel.sh
+          sed -i 's/device.name2=.*/device.name2=peux/' anykernel.sh
+          zip -r9 ../ReSukiSU-veux-$(date +%Y%m%d).zip . -x ".git*"
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
         with:
-          kernel-url: https://github.com/crdroidandroid/android_kernel_xiaomi_sm6375
-          kernel-branch: 14.0
-          config: defconfig
-          arch: arm64
-          android-version: 12
-          aosp-gcc: true
-          aosp-clang: true
-          ksu: false
-          ksu-other: true
-          ksu-url: ${{ github.event.inputs.ksu-url || 'https://github.com/ReSukiSU/ReSukiSU' }}
-          anykernel3: true
-          merge-configs: '["arch/arm64/configs/vendor/holi_QGKI.config"]'
-          release: true
-          access-token: ${{ secrets.GITHUB_TOKEN }}
-          extra-make-args: '["LOCALVERSION=-ReSukiSU-veux"]'
+          name: ReSukiSU-kernel-veux
+          path: "ReSukiSU-veux-*.zip"
+          retention-days: 7
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: "ReSukiSU-veux-*.zip"
+          tag_name: "v1.0-$(date +%Y%m%d)"
+          name: "ReSukiSU Kernel for veux (SM6375)"
+          body: |
+            ReSukiSU kernel for Redmi Note 11 Pro+ 5G (veux/SM6375)
+            - Based on crDroid kernel source (14.0 branch)
+            - KernelSU-based root with SUSFS support
+            - Manual hooks for non-GKI 5.4 kernel
+            - AnyKernel3 flashable zip
+            
+            **Flashing:**
+            1. Extract boot.img from zip
+            2. `adb reboot bootloader`
+            3. `fastboot flash boot boot.img`
+            4. `fastboot reboot`
+            
+            **Recovery:** `fastboot flash boot stock_boot.img`
+          make_latest: true
