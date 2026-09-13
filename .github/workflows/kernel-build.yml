@@ -2,6 +2,9 @@ name: Build ReSukiSU Kernel for veux (SM6375)
 
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - '.github/workflows/kernel-build.yml'
 
 permissions:
   contents: write
