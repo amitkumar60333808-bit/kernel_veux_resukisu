@@ -107,7 +107,7 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           files: ReSukiSU-veux.zip
-          tag_name: v1.0
+          tag_name: v1.1
           name: ReSukiSU Kernel for veux
           body: |
             ReSukiSU kernel for Redmi Note 11 Pro+ 5G (veux/SM6375)
