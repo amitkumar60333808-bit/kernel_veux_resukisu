@@ -54,9 +54,10 @@ jobs:
       - name: Configure kernel
         run: |
           cd kernel
-          echo "=== Using source defconfig + vendor fragment (HOSTCC=gcc) ==="
-          make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out defconfig
-          cat arch/arm64/configs/vendor/holi_QGKI.config >> out/.config
+          echo "=== Using FULL stock vendor config (1868 =y) + KSU/SUSFS ==="
+          mkdir -p out
+          curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/vendor_config.txt" -o out/.config
+          echo "Base configs: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
           if [ -f arch/arm64/configs/vendor/susfs_fragment.config ]; then
             cat arch/arm64/configs/vendor/susfs_fragment.config >> out/.config
             echo "  Added SUSFS config fragment"
