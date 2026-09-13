@@ -1,6 +1,6 @@
 name: Build ReSukiSU Kernel (AOSP clang-r487747c)
 # Uses exact AOSP clang-r487747c (build 10087095) + full stock vendor config
-# + ReSukiSU (syscall_event_bridge) + SUSFS. No manual ksu_handle_* hooks.
+# + ReSukiSU (complete manual hooks) + SUSFS (SUS_SU disabled).
 
 on:
   workflow_dispatch:
