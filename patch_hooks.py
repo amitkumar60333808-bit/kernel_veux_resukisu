@@ -233,32 +233,23 @@ except Exception as e:
     print(f"  qrtr/tun.c fix skipped: {e}")
 
 # Fix 4: minstrel duplicate symbols
-# Makefile has: rc80211_minstrel-y := rc80211_minstrel.o rc80211_minstrel_ht.o
-# AND mac80211-$(RC_MINSTREL) += $(rc80211_minstrel-y)
-# This compiles same sources twice. Fix: remove rc80211_minstrel_ht.o from -y.
+# The Makefile has: mac80211-$(CONFIG_MAC80211_RC_MINSTREL) += $(rc80211_minstrel-y)
+# AND: rc80211_minstrel-y := rc80211_minstrel.o rc80211_minstrel_ht.o
+# This compiles the same sources into BOTH mac80211.ko AND rc80211_minstrel.ko
+# Fix: remove the mac80211 inclusion, keep only the separate module
 try:
     with open("net/mac80211/Makefile", "r") as f:
         content = f.read()
     import re
-    # Match: rc80211_minstrel-y := \  or  rc80211_minstrel-y := rc80211_minstrel.o \n rc80211_minstrel_ht.o
-    pattern = r'(rc80211_minstrel-y\s*:=\s*\\?\s*\n?\s*rc80211_minstrel\.o\s*\\?\s*\n?\s*)rc80211_minstrel_ht\.o'
+    # Remove the line that adds minstrel objects to mac80211 module
+    pattern = r'mac80211-\$\(CONFIG_MAC80211_RC_MINSTREL\)\s*\+=\s*\$\(rc80211_minstrel-y\)\n'
     if re.search(pattern, content):
-        content = re.sub(pattern, r'\1', content)
-        # Also clean up trailing backslash + newline if left dangling
-        content = re.sub(r'(rc80211_minstrel\.o\s*)\\\s*\n\s*\n', r'\1\n', content)
+        content = re.sub(pattern, '', content)
         with open("net/mac80211/Makefile", "w") as f:
             f.write(content)
-        print("  Fixed minstrel: removed rc80211_minstrel_ht.o from composite module")
+        print("  Fixed minstrel: removed duplicate minstrel from mac80211 module")
     else:
-        print("  minstrel: pattern not matched, trying simpler approach")
-        # Simpler: just remove the whole composite module line
-        content2 = re.sub(r'rc80211_minstrel-y\s*:=.*\\?\s*\n(\s*rc80211_minstrel[^\n]*\n)*', '', content)
-        if content2 != content:
-            with open("net/mac80211/Makefile", "w") as f:
-                f.write(content2)
-            print("  Fixed minstrel: removed entire composite module definition")
-        else:
-            print("  minstrel: could not match any pattern")
+        print("  minstrel: RC_MINSTREL mac80211 inclusion line not found")
 except Exception as e:
     print(f"  minstrel fix: {e}")
 
