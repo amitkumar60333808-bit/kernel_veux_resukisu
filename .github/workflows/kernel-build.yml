@@ -49,7 +49,23 @@ jobs:
       - name: Build kernel
         run: |
           cd kernel
-          make ARCH=arm64 LLVM=1 O=out KCFLAGS="-w" -j$(nproc) 2>&1 | tail -100
+          set +e
+          make ARCH=arm64 LLVM=1 O=out -j$(nproc) 2>&1 | tee build.log
+          BUILD_RC=${PIPESTATUS[0]}
+          echo "Build exit code: $BUILD_RC"
+          if [ $BUILD_RC -ne 0 ]; then
+            echo "=== BUILD FAILED ==="
+            grep -iE "error:" build.log | grep -v "warning:" | tail -20
+            echo "=== LAST 30 LINES ==="
+            tail -30 build.log
+          fi
+          exit $BUILD_RC
+
+      - name: Show build errors
+        if: failure()
+        run: |
+          cd kernel
+          grep -iE "error:" build.log | grep -v "warning:" | tail -20
 
       - name: Check output
         if: always()
