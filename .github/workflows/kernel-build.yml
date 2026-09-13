@@ -51,6 +51,10 @@ jobs:
           fi
           echo "CONFIG_KSU=y" >> out/.config
           echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
+          echo "CONFIG_SECURITY_SELINUX=y" >> out/.config
+          echo "CONFIG_SECURITY_SELINUX_DEVELOP=y" >> out/.config
+          echo "CONFIG_SECURITY_SELINUX_AVC_STATS=y" >> out/.config
+          echo "CONFIG_SECURITY_SELINUX_CHECKREQPROT_VALUE=0" >> out/.config
           echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
           make ARCH=arm64 LLVM=1 O=out olddefconfig
           echo "# CONFIG_QCOM_GCC_QCS404 is not set" >> out/.config
