@@ -14,87 +14,81 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get update -qq
-          sudo apt-get install -y -qq bc bison build-essential ccache curl flex g++-multilib gcc-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip python3 gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip python3
 
       - name: Clone kernel source
         run: |
-          git clone --depth=1 --branch 14.0 https://github.com/crdroidandroid/android_kernel_xiaomi_sm6375.git $GITHUB_WORKSPACE/kernel
-          ls $GITHUB_WORKSPACE/kernel/arch/arm64/configs/
+          git clone --depth=1 --branch 14.0 https://github.com/crdroidandroid/android_kernel_xiaomi_sm6375.git kernel
 
       - name: Setup ReSukiSU
         run: |
-          cd $GITHUB_WORKSPACE/kernel
+          cd kernel
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
-          ls -la
 
       - name: Configure kernel
         run: |
-          cd $GITHUB_WORKSPACE/kernel
-          pwd
+          cd kernel
+          echo "=== Available configs ==="
           ls arch/arm64/configs/
           ls arch/arm64/configs/vendor/ | grep -i holi
           
-          # Merge configs
-          cat arch/arm64/configs/defconfig arch/arm64/configs/vendor/holi_QGKI.config > .merged_config
-          echo "CONFIG_KSU=y" >> .merged_config
-          echo "CONFIG_KSU_MANUAL_HOOK=y" >> .merged_config
-          echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> .merged_config
+          make ARCH=arm64 LLVM=1 O=out defconfig
           
-          # Build
-          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- O=out defconfig 2>&1 | tail -3
-          cp .merged_config out/.config
-          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- O=out olddefconfig 2>&1 | tail -3
+          cat arch/arm64/configs/vendor/holi_QGKI.config >> out/.config
+          echo "CONFIG_KSU=y" >> out/.config
+          echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
+          echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
           
-          # Verify KSU is enabled
-          grep "CONFIG_KSU" out/.config || echo "WARNING: KSU not in config!"
+          make ARCH=arm64 LLVM=1 O=out olddefconfig
+          
+          echo "=== KSU config ==="
+          grep "CONFIG_KSU" out/.config || echo "WARNING: KSU not in config"
 
       - name: Build kernel
         run: |
-          cd $GITHUB_WORKSPACE/kernel
-          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- O=out -j$(nproc) 2>&1 | tail -80
+          cd kernel
+          make ARCH=arm64 LLVM=1 O=out -j$(nproc) 2>&1 | tail -100
 
       - name: Check output
         if: always()
         run: |
-          ls -la $GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image 2>/dev/null || echo "Image NOT found"
-          ls $GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/ 2>/dev/null
+          ls -la kernel/out/arch/arm64/boot/Image* 2>/dev/null || echo "Image NOT found"
 
       - name: Package AnyKernel3
-        if: hashFiles('kernel/out/arch/arm64/boot/Image') != ''
+        if: always()
         run: |
-          cd $GITHUB_WORKSPACE
+          test -f kernel/out/arch/arm64/boot/Image || exit 1
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
           cd AnyKernel3
           rm -f *.zip
-          cp $GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image Image
+          cp ../kernel/out/arch/arm64/boot/Image Image
           sed -i 's/kernel.string=.*/kernel.string=ReSukiSU-veux/' anykernel.sh
           sed -i 's/do.devicecheck=.*/do.devicecheck=1/' anykernel.sh
           sed -i 's/device.name1=.*/device.name1=veux/' anykernel.sh
           sed -i 's/device.name2=.*/device.name2=peux/' anykernel.sh
-          zip -r9 $GITHUB_WORKSPACE/ReSukiSU-veux-$(date +%Y%m%d).zip . -x ".git*"
+          zip -r9 ../ReSukiSU-veux.zip . -x ".git*"
 
       - name: Upload artifact
-        if: hashFiles('ReSukiSU-veux-*.zip') != ''
+        if: hashFiles('ReSukiSU-veux.zip') != ''
         uses: actions/upload-artifact@v4
         with:
           name: ReSukiSU-kernel-veux
-          path: "ReSukiSU-veux-*.zip"
+          path: ReSukiSU-veux.zip
           retention-days: 7
 
       - name: Create Release
-        if: hashFiles('ReSukiSU-veux-*.zip') != ''
+        if: hashFiles('ReSukiSU-veux.zip') != ''
         uses: softprops/action-gh-release@v2
         with:
-          files: "ReSukiSU-veux-*.zip"
-          tag_name: "v1.0-$(date +%Y%m%d)"
-          name: "ReSukiSU Kernel for veux"
+          files: ReSukiSU-veux.zip
+          tag_name: v1.0
+          name: ReSukiSU Kernel for veux
           body: |
             ReSukiSU kernel for Redmi Note 11 Pro+ 5G (veux/SM6375)
-            - crDroid 14.0 kernel base
-            - KernelSU root with SUSFS
-            - Manual hooks for non-GKI 5.4
+            - crDroid 14.0 kernel base (5.4.280)
+            - KernelSU root + SUSFS
+            - Pure LLVM build
             
-            Flash: Extract boot.img, fastboot flash boot boot.img
-            Recovery: fastboot flash boot stock_boot.img
+            Flash: Extract boot.img, `fastboot flash boot boot.img`
+            Recovery: `fastboot flash boot stock_boot.img`
           make_latest: true
