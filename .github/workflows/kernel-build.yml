@@ -42,6 +42,7 @@ jobs:
         run: |
           cd kernel
           echo "=== Using full stock vendor config as base ==="
+          mkdir -p out
           curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/vendor_config.txt" -o out/.config
           echo "Stock configs: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
           if [ -f arch/arm64/configs/vendor/susfs_fragment.config ]; then
