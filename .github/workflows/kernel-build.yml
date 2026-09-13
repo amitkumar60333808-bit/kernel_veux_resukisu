@@ -1,5 +1,5 @@
-name: Build ReSukiSU Kernel (AOSP Clang r487747c)
-# Uses same clang-r487747c as stock kernel + full stock config + ReSukiSU/SUSFS
+name: Build ReSukiSU Kernel (ZyC-Clang 16)
+# Uses ZyC-Clang 16.0.6 + source defconfig + ReSukiSU/SUSFS
 
 on:
   workflow_dispatch:
@@ -9,28 +9,34 @@ on:
 
 jobs:
   build-kernel:
-    name: Build ReSukiSU Kernel (AOSP Clang)
+    name: Build ReSukiSU Kernel (ZyC-Clang 16)
     runs-on: ubuntu-22.04
     steps:
       - name: Install dependencies
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip python3 xz-utils zstd
+          sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip python3
 
       - name: Clone kernel source
         run: |
           git clone --depth=1 --branch 14.0 https://github.com/crdroidandroid/android_kernel_xiaomi_sm6375.git kernel
 
-      - name: Download AOSP clang-r487747c toolchain
+      - name: Download ZyC-Clang 16.0.6
         run: |
-          echo "=== Downloading AOSP clang-r487747c via sparse checkout ==="
-          git clone --depth=1 --filter=blob:none --sparse https://github.com/msft-mirror-aosp/platform.prebuilts.clang.host.linux-x86.git /tmp/clang-host 2>&1 | tail -5
-          cd /tmp/clang-host
-          git sparse-checkout set clang-r487747c 2>&1 | tail -5
-          ls -la /tmp/clang-host/clang-r487747c/bin/clang
-          /tmp/clang-host/clang-r487747c/bin/clang --version | head -3
-          echo "CLANG_DIR=/tmp/clang-host/clang-r487747c" >> $GITHUB_ENV
-          echo "/tmp/clang-host/clang-r487747c/bin" >> $GITHUB_PATH
+          echo "=== Downloading ZyC-Clang 16.0.6 ==="
+          curl -LSsL "https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz" -o /tmp/clang.tar.gz
+          ls -la /tmp/clang.tar.gz
+          mkdir -p /tmp/clang
+          tar -xzf /tmp/clang.tar.gz -C /tmp/clang 2>&1 | tail -3
+          # Find the bin directory
+          CLANG_BIN=$(find /tmp/clang -maxdepth 3 -name "clang" -type f | head -1)
+          echo "Found clang: $CLANG_BIN"
+          CLANG_DIR=$(dirname $(dirname $CLANG_BIN))
+          echo "CLANG_DIR=$CLANG_DIR" >> $GITHUB_ENV
+          echo "$CLANG_DIR/bin" >> $GITHUB_PATH
+          echo "=== Using toolchain ==="
+          $CLANG_BIN --version | head -3
+          ls $CLANG_DIR/bin/ | head -20
 
       - name: Setup ReSukiSU
         run: |
@@ -52,10 +58,9 @@ jobs:
       - name: Configure kernel
         run: |
           cd kernel
-          echo "=== Using full stock vendor config as base ==="
-          mkdir -p out
-          curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/vendor_config.txt" -o out/.config
-          echo "Stock configs: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
+          echo "=== Using source defconfig + vendor fragment ==="
+          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- O=out defconfig
+          cat arch/arm64/configs/vendor/holi_QGKI.config >> out/.config
           if [ -f arch/arm64/configs/vendor/susfs_fragment.config ]; then
             cat arch/arm64/configs/vendor/susfs_fragment.config >> out/.config
             echo "  Added SUSFS config fragment"
@@ -63,7 +68,7 @@ jobs:
           echo "CONFIG_KSU=y" >> out/.config
           echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
           echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
-          echo "=== Resolve deps ==="
+          echo "=== Resolve deps (pass 1) ==="
           make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- O=out olddefconfig
           echo "=== Verify critical configs ==="
           grep -E "^CONFIG_QCOM_SCM=|^CONFIG_QCOM_KGSL=|^CONFIG_SYNC_FILE=|^CONFIG_SECURITY_SELINUX=|^CONFIG_KSU=|^CONFIG_DRM=" out/.config || echo "WARN: some configs missing"
@@ -74,9 +79,8 @@ jobs:
       - name: Build kernel
         run: |
           cd kernel
-          echo "=== Using compiler ==="
-          echo "PATH=$PATH" | head -1
-          which clang && clang --version | head -3
+          echo "=== Compiler ==="
+          clang --version | head -3
           set +e
           make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- O=out KCFLAGS="-w" -j$(nproc) 2>&1 | tee build.log
           BUILD_RC=${PIPESTATUS[0]}
