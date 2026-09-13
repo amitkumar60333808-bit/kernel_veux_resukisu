@@ -20,7 +20,7 @@ jobs:
         uses: dabao1955/kernel_build_action@main
         with:
           kernel-url: https://github.com/crdroidandroid/android_kernel_xiaomi_sm6375
-          kernel-branch: 16.0
+          kernel-branch: 14.0
           config: defconfig
           arch: arm64
           android-version: 12
