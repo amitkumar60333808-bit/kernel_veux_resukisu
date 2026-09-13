@@ -278,4 +278,3 @@ except Exception as e:
     print(f"  qcom_scm.c fix: {e}")
 
 print("  Done fixing compilation errors")
-# zombie run fix
