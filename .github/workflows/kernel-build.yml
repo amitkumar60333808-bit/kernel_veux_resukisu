@@ -1,5 +1,4 @@
-name: Build ReSukiSU Kernel for veux (SM6375)
-# trigger: minstrel inline fix + config deps v2
+name: Build Test Kernel (stock config, no patches)
 
 on:
   workflow_dispatch:
@@ -9,7 +8,7 @@ on:
 
 jobs:
   build-kernel:
-    name: Build ReSukiSU Kernel
+    name: Build Stock Test Kernel
     runs-on: ubuntu-22.04
     steps:
       - name: Install dependencies
@@ -21,61 +20,23 @@ jobs:
         run: |
           git clone --depth=1 --branch 14.0 https://github.com/crdroidandroid/android_kernel_xiaomi_sm6375.git kernel
 
-      - name: Setup ReSukiSU
+      - name: NO patches - stock source only (test)
         run: |
-          cd kernel
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
-
-      - name: Apply SUSFS patches
-        run: |
-          cd kernel
-          curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/apply_susfs.py" -o apply_susfs.py
-          python3 apply_susfs.py
-
-      - name: Apply manual hooks
-        run: |
-          cd kernel
-          curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/patch_hooks.py" -o patch_hooks.py
-          python3 patch_hooks.py
+          echo "=== BUILDING UNMODIFIED STOCK SOURCE ==="
+          echo "No ReSukiSU, no SUSFS, no manual hooks"
+          echo "Just stock config to verify our build system produces a bootable kernel"
 
       - name: Configure kernel
         run: |
           cd kernel
-          echo "=== Using full stock vendor config as base ==="
           mkdir -p out
           curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/vendor_config.txt" -o out/.config
           echo "Stock configs: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
-          if [ -f arch/arm64/configs/vendor/susfs_fragment.config ]; then
-            cat arch/arm64/configs/vendor/susfs_fragment.config >> out/.config
-            echo "  Added SUSFS config fragment"
-          fi
-          echo "CONFIG_KSU=y" >> out/.config
-          echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
-          echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
           echo "=== Resolve deps ==="
           make ARCH=arm64 LLVM=1 O=out olddefconfig
-          echo "=== Verify critical configs ==="
-          grep -E "^CONFIG_QCOM_SCM=|^CONFIG_QCOM_KGSL=|^CONFIG_SYNC_FILE=|^CONFIG_SECURITY_SELINUX=|^CONFIG_KSU=|^CONFIG_DRM=" out/.config || echo "WARN: some configs missing"
           echo "=== Build scripts/prepare ==="
           make ARCH=arm64 LLVM=1 O=out prepare -j$(nproc)
           make ARCH=arm64 LLVM=1 O=out scripts -j$(nproc)
-          echo "=== Generating SELinux flask.h manually ==="
-          mkdir -p scripts/selinux/genheaders out/scripts/selinux/genheaders out/security/selinux
-          if gcc -Iinclude/uapi -Iinclude -Isecurity/selinux/include \
-               -o out/scripts/selinux/genheaders/genheaders \
-               scripts/selinux/genheaders/genheaders.c > /tmp/gcc.log 2>&1; then
-            cp out/scripts/selinux/genheaders/genheaders scripts/selinux/genheaders/genheaders
-            out/scripts/selinux/genheaders/genheaders \
-              security/selinux/include/flask.h security/selinux/include/av_permissions.h
-            cp security/selinux/include/flask.h security/selinux/flask.h 2>/dev/null || true
-            cp security/selinux/include/av_permissions.h security/selinux/av_permissions.h 2>/dev/null || true
-            cp security/selinux/include/flask.h out/security/selinux/flask.h 2>/dev/null || true
-            cp security/selinux/include/av_permissions.h out/security/selinux/av_permissions.h 2>/dev/null || true
-            echo "flask.h generated OK"
-          else
-            echo "WARN: genheaders compile failed:"
-            tail -5 /tmp/gcc.log || true
-          fi
 
       - name: Build kernel
         run: |
@@ -92,12 +53,6 @@ jobs:
           fi
           exit $BUILD_RC
 
-      - name: Show build errors
-        if: failure()
-        run: |
-          cd kernel
-          grep -iE "error:" build.log | grep -v "warning:" | tail -20
-
       - name: Check output
         if: always()
         run: |
@@ -107,45 +62,28 @@ jobs:
         if: success()
         run: |
           cd kernel
-          ls -la out/arch/arm64/boot/
           IMAGE=$(ls out/arch/arm64/boot/Image* 2>/dev/null | head -1)
           if [ -z "$IMAGE" ]; then
-            echo "ERROR: No Image found in out/arch/arm64/boot/"
+            echo "ERROR: No Image found"
             exit 1
           fi
           echo "Found kernel image: $IMAGE"
+          echo "Image size: $(wc -c < $IMAGE)"
           cd ..
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
           cd AnyKernel3
           rm -f *.zip
           cp ../kernel/$IMAGE Image
-          sed -i 's/kernel.string=.*/kernel.string=ReSukiSU-veux/' anykernel.sh
+          sed -i 's/kernel.string=.*/kernel.string=stock-test/' anykernel.sh
           sed -i 's/do.devicecheck=.*/do.devicecheck=1/' anykernel.sh
           sed -i 's/device.name1=.*/device.name1=veux/' anykernel.sh
           sed -i 's/device.name2=.*/device.name2=peux/' anykernel.sh
-          zip -r9 ../ReSukiSU-veux.zip . -x ".git*"
+          zip -r9 ../stock-test-veux.zip . -x ".git*"
 
       - name: Upload artifact
-        if: hashFiles('ReSukiSU-veux.zip') != ''
+        if: hashFiles('stock-test-veux.zip') != ''
         uses: actions/upload-artifact@v4
         with:
-          name: ReSukiSU-kernel-veux
-          path: ReSukiSU-veux.zip
+          name: stock-test-kernel-veux
+          path: stock-test-veux.zip
           retention-days: 7
-
-      - name: Create Release
-        if: hashFiles('ReSukiSU-veux.zip') != ''
-        uses: softprops/action-gh-release@v2
-        with:
-          files: ReSukiSU-veux.zip
-          tag_name: v1.1
-          name: ReSukiSU Kernel for veux
-          body: |
-            ReSukiSU kernel for Redmi Note 11 Pro+ 5G (veux/SM6375)
-            - crDroid 14.0 kernel base (5.4.280)
-            - KernelSU root + SUSFS
-            - Pure LLVM build
-            
-            Flash: Extract boot.img, fastboot flash boot boot.img
-            Recovery: fastboot flash boot stock_boot.img
-          make_latest: true
