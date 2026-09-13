@@ -18,62 +18,63 @@ jobs:
 
       - name: Clone kernel source
         run: |
-          git clone --depth=1 --branch 14.0 https://github.com/crdroidandroid/android_kernel_xiaomi_sm6375.git kernel
+          git clone --depth=1 --branch 14.0 https://github.com/crdroidandroid/android_kernel_xiaomi_sm6375.git $GITHUB_WORKSPACE/kernel
+          ls $GITHUB_WORKSPACE/kernel/arch/arm64/configs/
 
       - name: Setup ReSukiSU
-        working-directory: kernel
         run: |
+          cd $GITHUB_WORKSPACE/kernel
           curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
+          ls -la
 
       - name: Configure kernel
-        working-directory: kernel
         run: |
-          # Create merged defconfig
-          cat defconfig vendor/holi_QGKI.config > .config_fragment
-          echo "CONFIG_KSU=y" >> .config_fragment
-          echo "CONFIG_KSU_MANUAL_HOOK=y" >> .config_fragment
-          echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> .config_fragment
-          
-          # Show what defconfig files exist
-          echo "=== Available defconfigs ==="
+          cd $GITHUB_WORKSPACE/kernel
+          pwd
           ls arch/arm64/configs/
           ls arch/arm64/configs/vendor/ | grep -i holi
           
-          # Try to build the defconfig
-          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- O=out defconfig 2>&1 | tail -5
+          # Merge configs
+          cat arch/arm64/configs/defconfig arch/arm64/configs/vendor/holi_QGKI.config > .merged_config
+          echo "CONFIG_KSU=y" >> .merged_config
+          echo "CONFIG_KSU_MANUAL_HOOK=y" >> .merged_config
+          echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> .merged_config
           
-          # Merge our config fragment
-          scripts/kconfig/merge_config.sh -m -O out arch/arm64/configs/defconfig arch/arm64/configs/vendor/holi_QGKI.config .config_fragment 2>&1 | tail -10
+          # Build
+          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- O=out defconfig 2>&1 | tail -3
+          cp .merged_config out/.config
+          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- O=out olddefconfig 2>&1 | tail -3
           
-          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- O=out olddefconfig 2>&1 | tail -5
+          # Verify KSU is enabled
+          grep "CONFIG_KSU" out/.config || echo "WARNING: KSU not in config!"
 
       - name: Build kernel
-        working-directory: kernel
         run: |
-          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- O=out -j$(nproc) 2>&1 | tail -50
+          cd $GITHUB_WORKSPACE/kernel
+          make ARCH=arm64 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- CROSS_COMPILE=aarch64-linux-gnu- O=out -j$(nproc) 2>&1 | tail -80
 
       - name: Check output
-        working-directory: kernel
+        if: always()
         run: |
-          ls -la out/arch/arm64/boot/Image 2>/dev/null || echo "Image not found!"
-          ls -la out/arch/arm64/boot/ 2>/dev/null | head -20
+          ls -la $GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image 2>/dev/null || echo "Image NOT found"
+          ls $GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/ 2>/dev/null
 
       - name: Package AnyKernel3
-        if: success()
-        working-directory: kernel
+        if: hashFiles('kernel/out/arch/arm64/boot/Image') != ''
         run: |
-          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git ../AnyKernel3
-          cd ../AnyKernel3
+          cd $GITHUB_WORKSPACE
+          git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
+          cd AnyKernel3
           rm -f *.zip
-          cp ../kernel/out/arch/arm64/boot/Image Image
+          cp $GITHUB_WORKSPACE/kernel/out/arch/arm64/boot/Image Image
           sed -i 's/kernel.string=.*/kernel.string=ReSukiSU-veux/' anykernel.sh
           sed -i 's/do.devicecheck=.*/do.devicecheck=1/' anykernel.sh
           sed -i 's/device.name1=.*/device.name1=veux/' anykernel.sh
           sed -i 's/device.name2=.*/device.name2=peux/' anykernel.sh
-          zip -r9 ../ReSukiSU-veux-$(date +%Y%m%d).zip . -x ".git*"
+          zip -r9 $GITHUB_WORKSPACE/ReSukiSU-veux-$(date +%Y%m%d).zip . -x ".git*"
 
       - name: Upload artifact
-        if: success()
+        if: hashFiles('ReSukiSU-veux-*.zip') != ''
         uses: actions/upload-artifact@v4
         with:
           name: ReSukiSU-kernel-veux
@@ -81,7 +82,7 @@ jobs:
           retention-days: 7
 
       - name: Create Release
-        if: success()
+        if: hashFiles('ReSukiSU-veux-*.zip') != ''
         uses: softprops/action-gh-release@v2
         with:
           files: "ReSukiSU-veux-*.zip"
