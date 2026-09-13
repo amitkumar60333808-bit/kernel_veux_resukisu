@@ -25,18 +25,24 @@ jobs:
         run: |
           echo "=== Downloading ZyC-Clang 16.0.6 ==="
           curl -LSsL "https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz" -o /tmp/clang.tar.gz
-          ls -la /tmp/clang.tar.gz
           mkdir -p /tmp/clang
           tar -xzf /tmp/clang.tar.gz -C /tmp/clang 2>&1 | tail -3
-          # Find the bin directory
-          CLANG_BIN=$(find /tmp/clang -maxdepth 3 -name "clang" -type f | head -1)
-          echo "Found clang: $CLANG_BIN"
-          CLANG_DIR=$(dirname $(dirname $CLANG_BIN))
-          echo "CLANG_DIR=$CLANG_DIR" >> $GITHUB_ENV
-          echo "$CLANG_DIR/bin" >> $GITHUB_PATH
+          echo "=== Finding clang ==="
+          find /tmp/clang -maxdepth 5 -name "clang" -type f 2>/dev/null | head -5
+          # Find the directory containing clang binary
+          BIN_DIR=$(find /tmp/clang -maxdepth 5 -name "clang" -type f -exec dirname {} \; 2>/dev/null | head -1)
+          if [ -z "$BIN_DIR" ]; then
+            echo "ERROR: clang not found!"
+            ls -la /tmp/clang/
+            find /tmp/clang -maxdepth 2 -type d | head -20
+            exit 1
+          fi
+          TOOLCHAIN_DIR=$(dirname "$BIN_DIR")
+          echo "TOOLCHAIN_DIR=$TOOLCHAIN_DIR" >> $GITHUB_ENV
+          echo "$BIN_DIR" >> $GITHUB_PATH
           echo "=== Using toolchain ==="
-          $CLANG_BIN --version | head -3
-          ls $CLANG_DIR/bin/ | head -20
+          clang --version | head -3
+          ls "$BIN_DIR/" | head -20
 
       - name: Setup ReSukiSU
         run: |
