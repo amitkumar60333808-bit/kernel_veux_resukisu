@@ -1,5 +1,4 @@
 name: Build ReSukiSU Kernel for veux (SM6375)
-# trigger: flask.h manual generation + SELinux dep chain
 
 on:
   workflow_dispatch:
