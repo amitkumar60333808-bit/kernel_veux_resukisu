@@ -23,9 +23,9 @@ jobs:
           kernel-branch: 16.0
           config: defconfig
           arch: arm64
+          android-version: 12
           aosp-gcc: true
           aosp-clang: true
-          aosp-clang-version: r383902
           ksu: false
           ksu-other: true
           ksu-url: ${{ github.event.inputs.ksu-url || 'https://github.com/ReSukiSU/ReSukiSU' }}
