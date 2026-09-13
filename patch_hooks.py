@@ -232,37 +232,52 @@ try:
 except Exception as e:
     print(f"  qrtr/tun.c fix skipped: {e}")
 
-# Fix 4: minstrel duplicate symbols - remove from built-in if also module
+# Fix 4: minstrel duplicate symbols
+# rc80211_minstrel.o includes rc80211_minstrel_ht.o via -objs but rc80211_minstrel_ht
+# is also compiled as separate module. Fix: remove rc80211_minstrel_ht from -objs line.
 try:
     with open("net/mac80211/Makefile", "r") as f:
-        lines = f.readlines()
-    fixed = False
-    new_lines = []
-    for line in lines:
-        if "rc80211_minstrel" in line and "obj-" in line:
-            print(f"  Found minstrel Makefile line: {line.strip()}")
-        new_lines.append(line)
-    # Check if CONFIG_MAC80211_MINSTREL is set as built-in (y)
-    with open("out/.config", "r") as f:
-        config = f.read()
-    if "CONFIG_MAC80211_MINSTREL=y" in config or "CONFIG_MAC80211_MINSTREL_HT=y" in config:
-        print("  Minstrel set as built-in, may conflict with module build")
+        content = f.read()
+    import re
+    # Remove rc80211_minstrel_ht.o from the -objs line only (keep rest of line)
+    pattern = r'(rc80211_minstrel-objs\s*[:?]?=\s*)([^\n]*)'
+    match = re.search(pattern, content)
+    if match:
+        objs_line = match.group(2)
+        new_objs = re.sub(r'\s*rc80211_minstrel_ht\.o', '', objs_line).strip()
+        if new_objs != objs_line.strip():
+            content = content[:match.start(2)] + new_objs + content[match.end(2):]
+            with open("net/mac80211/Makefile", "w") as f:
+                f.write(content)
+            print("  Fixed minstrel: removed rc80211_minstrel_ht.o from -objs")
+        else:
+            print("  minstrel: rc80211_minstrel_ht.o not in -objs line")
+    else:
+        print("  minstrel: rc80211_minstrel-objs pattern not found")
 except Exception as e:
-    print(f"  minstrel check: {e}")
+    print(f"  minstrel fix: {e}")
 
-# Fix 5: qcom_scm.c redefinition - wrap duplicate init
+# Fix 5: qcom_scm.c redefinition
+# File has both subsys_initcall (built-in) and module_init (module) for same function.
+# When built as module [M], both expand causing duplicate __inittest/init_module.
+# Fix: wrap subsys_initcall in #ifndef MODULE so only one init path is used.
 try:
     with open("drivers/firmware/qcom_scm.c", "r") as f:
         content = f.read()
-    # Check for module_init that conflicts with built-in
-    if "module_init" in content and "core_initcall" in content:
-        print("  qcom_scm.c has both module_init and core_initcall, fixing")
-        content = content.replace(
-            "module_init(qcom_scm_init);",
-            "#ifndef CONFIG_QCOM_SCM\nmodule_init(qcom_scm_init);\n#endif"
-        )
-        with open("drivers/firmware/qcom_scm.c", "w") as f:
-            f.write(content)
+    import re
+    # Wrap subsys_initcall(qcom_scm_init) in #ifndef MODULE
+    pattern = r'(subsys_initcall\(qcom_scm_init\);)'
+    replacement = r'#ifndef MODULE\n\1\n#endif'
+    if re.search(pattern, content):
+        new_content = re.sub(pattern, replacement, content)
+        if new_content != content:
+            with open("drivers/firmware/qcom_scm.c", "w") as f:
+                f.write(new_content)
+            print("  Fixed qcom_scm.c: wrapped subsys_initcall in #ifndef MODULE")
+        else:
+            print("  qcom_scm.c: subsys_initcall already wrapped")
+    else:
+        print("  qcom_scm.c: subsys_initcall(qcom_scm_init) not found")
 except Exception as e:
     print(f"  qcom_scm.c fix: {e}")
 
