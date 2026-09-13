@@ -108,11 +108,19 @@ else:
       - name: Package AnyKernel3
         if: success()
         run: |
-          test -f kernel/out/arch/arm64/boot/Image || exit 1
+          cd kernel
+          ls -la out/arch/arm64/boot/
+          IMAGE=$(ls out/arch/arm64/boot/Image* 2>/dev/null | head -1)
+          if [ -z "$IMAGE" ]; then
+            echo "ERROR: No Image found in out/arch/arm64/boot/"
+            exit 1
+          fi
+          echo "Found kernel image: $IMAGE"
+          cd ..
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
           cd AnyKernel3
           rm -f *.zip
-          cp ../kernel/out/arch/arm64/boot/Image Image
+          cp ../kernel/$IMAGE Image
           sed -i 's/kernel.string=.*/kernel.string=ReSukiSU-veux/' anykernel.sh
           sed -i 's/do.devicecheck=.*/do.devicecheck=1/' anykernel.sh
           sed -i 's/device.name1=.*/device.name1=veux/' anykernel.sh
