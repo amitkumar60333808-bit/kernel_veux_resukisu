@@ -23,6 +23,7 @@ jobs:
           kernel-branch: 16.0
           config: defconfig
           arch: arm64
+          aosp-gcc: true
           aosp-clang: true
           aosp-clang-version: r383902
           ksu: false
