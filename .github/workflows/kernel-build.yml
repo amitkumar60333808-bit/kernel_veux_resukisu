@@ -31,6 +31,39 @@ jobs:
           curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/patch_hooks.py" -o patch_hooks.py
           python3 patch_hooks.py
 
+      - name: Fix ReSukiSU patches
+        run: |
+          cd kernel
+          python3 -c "
+with open('kernel/taskstats.c', 'r') as f:
+    content = f.read()
+lines = content.split('\n')
+fixed = False
+for i, line in enumerate(lines):
+    stripped = line.strip()
+    if stripped.startswith('#elif') and i > 0:
+        found_if = False
+        for j in range(i-1, -1, -1):
+            s = lines[j].strip()
+            if s.startswith('#if'):
+                found_if = True
+                break
+            elif s.startswith('#elif') or s.startswith('#else') or s.startswith('#endif'):
+                break
+        if not found_if:
+            print(f'  Found orphan #elif at line {i+1}, converting to #if')
+            lines[i] = line.replace('#elif', '#if', 1)
+            fixed = True
+if fixed:
+    with open('kernel/taskstats.c', 'w') as f:
+        f.write('\n'.join(lines))
+    print('  Fixed taskstats.c')
+else:
+    print('  No orphan #elif, showing context:')
+    for i in range(max(0, 465), min(len(lines), 475)):
+        print(f'  {i+1}: {lines[i]}')
+"
+
       - name: Configure kernel
         run: |
           cd kernel
