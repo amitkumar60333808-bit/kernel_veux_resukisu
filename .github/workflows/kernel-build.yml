@@ -21,25 +21,18 @@ jobs:
         run: |
           git clone --depth=1 --branch 14.0 https://github.com/crdroidandroid/android_kernel_xiaomi_sm6375.git kernel
 
-      - name: Download ZyC-Clang 16.0.6
+      - name: Download AOSP clang-r487747c (exact crDroid toolchain)
         run: |
-          echo "=== Downloading ZyC-Clang 16.0.6 ==="
-          curl -LSsL "https://github.com/ZyCromerZ/Clang/releases/download/16.0.6-20260807-release/Clang-16.0.6-20260807.tar.gz" -o /tmp/clang.tar.gz
+          echo "=== Downloading AOSP clang-r487747c (build 10087095, same as stock) ==="
           mkdir -p /tmp/toolchain
-          tar -xzf /tmp/clang.tar.gz -C /tmp/toolchain 2>&1 | tail -3
-          echo "=== Toolchain contents ==="
-          ls /tmp/toolchain/
-          echo "=== clang binary location ==="
-          ls -la /tmp/toolchain/bin/clang 2>/dev/null || find /tmp/toolchain -name "clang" -maxdepth 3 2>/dev/null | head -5
-          # IMPORTANT: only put clang's bin dir on PATH.
-          # Adding the cross binutils dirs (aarch64-linux-gnu/bin) breaks HOSTCC (fixdep)
-          # because the kernel's host tools pick up the ARM64 cross 'as'.
+          curl -sL --max-time 570 "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/fd582b924a40/clang-r487747c.tar.gz" -o /tmp/clang.tar.gz
+          ls -la /tmp/clang.tar.gz
+          tar -xzf /tmp/clang.tar.gz -C /tmp/toolchain 2>&1 | tail -2 || true
+          echo "=== Verify toolchain ==="
+          /tmp/toolchain/bin/clang-17 --version | head -3
+          ls /tmp/toolchain/bin/ | grep -cE "llvm-(ar|nm|objcopy|strip)$"
           echo "/tmp/toolchain/bin" >> $GITHUB_PATH
           echo "TOOLCHAIN_DIR=/tmp/toolchain" >> $GITHUB_ENV
-          echo "=== Verify ==="
-          which clang
-          clang --version | head -3
-          ls /tmp/toolchain/bin/ | grep -E "^(clang|lld|llvm-(ar|nm|objcopy|objdump|strip))$" | head
 
       - name: Setup ReSukiSU
         run: |
