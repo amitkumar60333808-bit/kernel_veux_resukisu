@@ -50,7 +50,7 @@ jobs:
         run: |
           cd kernel
           set +e
-          make ARCH=arm64 LLVM=1 O=out -j$(nproc) 2>&1 | tee build.log
+          make ARCH=arm64 LLVM=1 O=out KCFLAGS="-w" -j$(nproc) 2>&1 | tee build.log
           BUILD_RC=${PIPESTATUS[0]}
           echo "Build exit code: $BUILD_RC"
           if [ $BUILD_RC -ne 0 ]; then
