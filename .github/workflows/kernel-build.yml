@@ -78,6 +78,11 @@ jobs:
           echo "CONFIG_QCOM_KGSL=y" >> out/.config
           echo "CONFIG_SYNC_FILE=y" >> out/.config
           echo "CONFIG_QCOM_SECURE_BUFFER=y" >> out/.config
+          echo "CONFIG_IOMMU_SUPPORT=y" >> out/.config
+          echo "CONFIG_IOMMU_API=y" >> out/.config
+          echo "CONFIG_IOMMU_DMA=y" >> out/.config
+          echo "CONFIG_ARM_SMMU=y" >> out/.config
+          echo "CONFIG_DRM=y" >> out/.config
           echo "CONFIG_DRM_PANEL=y" >> out/.config
           echo "=== Step 6: Resolve all deps ==="
           make ARCH=arm64 LLVM=1 O=out olddefconfig
