@@ -41,62 +41,24 @@ jobs:
       - name: Configure kernel
         run: |
           cd kernel
-          echo "=== Available configs ==="
-          ls arch/arm64/configs/
-          ls arch/arm64/configs/vendor/ 2>/dev/null | head -20
-          echo "=== Step 1: Base defconfig ==="
-          make ARCH=arm64 LLVM=1 O=out defconfig
-          echo "=== Step 2: Merge vendor fragment ==="
-          cat arch/arm64/configs/vendor/holi_QGKI.config >> out/.config
+          echo "=== Using full stock vendor config as base ==="
+          curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/vendor_config.txt" -o out/.config
+          echo "Stock configs: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
           if [ -f arch/arm64/configs/vendor/susfs_fragment.config ]; then
             cat arch/arm64/configs/vendor/susfs_fragment.config >> out/.config
             echo "  Added SUSFS config fragment"
           fi
-          echo "=== Step 3: Resolve vendor deps first ==="
-          make ARCH=arm64 LLVM=1 O=out olddefconfig
-          echo "=== Step 4: Add manual configs + SELinux deps ==="
           echo "CONFIG_KSU=y" >> out/.config
           echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
           echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
-          echo "CONFIG_NET=y" >> out/.config
-          echo "CONFIG_INET=y" >> out/.config
-          echo "CONFIG_SECURITY=y" >> out/.config
-          echo "CONFIG_SECURITYFS=y" >> out/.config
-          echo "CONFIG_SECURITY_NETWORK=y" >> out/.config
-          echo "CONFIG_SECURITY_PATH=y" >> out/.config
-          echo "CONFIG_NETWORK_SECMARK=y" >> out/.config
-          echo "CONFIG_SECURITY_SELINUX=y" >> out/.config
-          echo "CONFIG_SECURITY_SELINUX_DEVELOP=y" >> out/.config
-          echo "CONFIG_SECURITY_SELINUX_AVC_STATS=y" >> out/.config
-          echo "CONFIG_SECURITY_SELINUX_CHECKREQPROT_VALUE=0" >> out/.config
-          echo "CONFIG_ARM_SCMI_PROTOCOL=y" >> out/.config
-          echo "CONFIG_QTI_SCMI_MEMLAT_PROTOCOL=y" >> out/.config
-          echo "CONFIG_QTI_SCMI_PLH_PROTOCOL=y" >> out/.config
-          echo "CONFIG_QTI_PLH_SCMI_CLIENT=y" >> out/.config
-          echo "=== Step 5: Ensure Qualcomm drivers built-in ==="
-          echo "CONFIG_QCOM_SCM=y" >> out/.config
-          echo "CONFIG_QCOM_KGSL=y" >> out/.config
-          echo "CONFIG_SYNC_FILE=y" >> out/.config
-          echo "CONFIG_QCOM_SECURE_BUFFER=y" >> out/.config
-          echo "CONFIG_IOMMU_SUPPORT=y" >> out/.config
-          echo "CONFIG_IOMMU_API=y" >> out/.config
-          echo "CONFIG_IOMMU_DMA=y" >> out/.config
-          echo "CONFIG_ARM_SMMU=y" >> out/.config
-          echo "CONFIG_DRM=y" >> out/.config
-          echo "CONFIG_DRM_PANEL=y" >> out/.config
-          echo "=== Step 6: Resolve all deps ==="
-          make ARCH=arm64 LLVM=1 O=out olddefconfig
-          echo "=== Step 7: Post-olddefconfig disables ==="
-          echo "# CONFIG_QCOM_GCC_QCS404 is not set" >> out/.config
-          echo "# CONFIG_QRTR_TUN is not set" >> out/.config
-          echo "# CONFIG_STMMAC_ETH is not set" >> out/.config
+          echo "=== Resolve deps ==="
           make ARCH=arm64 LLVM=1 O=out olddefconfig
           echo "=== Verify critical configs ==="
-          grep -E "^CONFIG_QCOM_SCM=|^CONFIG_QCOM_KGSL=|^CONFIG_SYNC_FILE=|^CONFIG_SECURITY_SELINUX=|^CONFIG_KSU=" out/.config || echo "WARN: some configs missing"
-          echo "=== Step 8: Build scripts/prepare ==="
+          grep -E "^CONFIG_QCOM_SCM=|^CONFIG_QCOM_KGSL=|^CONFIG_SYNC_FILE=|^CONFIG_SECURITY_SELINUX=|^CONFIG_KSU=|^CONFIG_DRM=" out/.config || echo "WARN: some configs missing"
+          echo "=== Build scripts/prepare ==="
           make ARCH=arm64 LLVM=1 O=out prepare -j$(nproc)
           make ARCH=arm64 LLVM=1 O=out scripts -j$(nproc)
-          echo "=== Step 9: Generating SELinux flask.h manually ==="
+          echo "=== Generating SELinux flask.h manually ==="
           mkdir -p scripts/selinux/genheaders out/scripts/selinux/genheaders out/security/selinux
           if gcc -Iinclude/uapi -Iinclude -Isecurity/selinux/include \
                -o out/scripts/selinux/genheaders/genheaders \
@@ -108,13 +70,11 @@ jobs:
             cp security/selinux/include/av_permissions.h security/selinux/av_permissions.h 2>/dev/null || true
             cp security/selinux/include/flask.h out/security/selinux/flask.h 2>/dev/null || true
             cp security/selinux/include/av_permissions.h out/security/selinux/av_permissions.h 2>/dev/null || true
-            echo "flask.h generated OK:"
-            ls -la security/selinux/include/flask.h
+            echo "flask.h generated OK"
           else
             echo "WARN: genheaders compile failed:"
             tail -5 /tmp/gcc.log || true
           fi
-          grep -E "^CONFIG_SECURITY_SELINUX=" out/.config || echo "WARN: SELINUX not in final config"
 
       - name: Build kernel
         run: |
