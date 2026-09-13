@@ -49,7 +49,7 @@ jobs:
       - name: Build kernel
         run: |
           cd kernel
-          make ARCH=arm64 LLVM=1 O=out -j$(nproc) 2>&1 | tail -100
+          make ARCH=arm64 LLVM=1 O=out KCFLAGS="-w" -j$(nproc) 2>&1 | tail -100
 
       - name: Check output
         if: always()
@@ -57,7 +57,7 @@ jobs:
           ls -la kernel/out/arch/arm64/boot/Image* 2>/dev/null || echo "Image NOT found"
 
       - name: Package AnyKernel3
-        if: always()
+        if: success()
         run: |
           test -f kernel/out/arch/arm64/boot/Image || exit 1
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
