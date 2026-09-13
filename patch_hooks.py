@@ -233,23 +233,22 @@ except Exception as e:
     print(f"  qrtr/tun.c fix skipped: {e}")
 
 # Fix 4: minstrel duplicate symbols
-# The Makefile has: mac80211-$(CONFIG_MAC80211_RC_MINSTREL) += $(rc80211_minstrel-y)
-# AND: rc80211_minstrel-y := rc80211_minstrel.o rc80211_minstrel_ht.o
-# This compiles the same sources into BOTH mac80211.ko AND rc80211_minstrel.ko
-# Fix: remove the mac80211 inclusion, keep only the separate module
+# Original: mac80211 compiled minstrel objects AND minstrel compiled as separate .ko = duplicate
+# Wrong fix (previous): removed minstrel from mac80211 → mac80211.ko can't find minstrel_init/exit
+# Correct fix: keep minstrel in mac80211, remove the separate module build
 try:
     with open("net/mac80211/Makefile", "r") as f:
         content = f.read()
     import re
-    # Remove the line that adds minstrel objects to mac80211 module
-    pattern = r'mac80211-\$\(CONFIG_MAC80211_RC_MINSTREL\)\s*\+=\s*\$\(rc80211_minstrel-y\)\n'
+    # Comment out the separate minstrel module build, keep objects in mac80211
+    pattern = r'obj-\$\(CONFIG_MAC80211_RC_MINSTREL\)\s*\+=\s*\$\(basename \$\(rc80211_minstrel-y\)\)\.o'
     if re.search(pattern, content):
-        content = re.sub(pattern, '', content)
+        content = re.sub(pattern, r'# minstrel kept in mac80211 (no separate module)\n# \0', content)
         with open("net/mac80211/Makefile", "w") as f:
             f.write(content)
-        print("  Fixed minstrel: removed duplicate minstrel from mac80211 module")
+        print("  Fixed minstrel: disabled separate module, kept in mac80211")
     else:
-        print("  minstrel: RC_MINSTREL mac80211 inclusion line not found")
+        print("  minstrel: separate module build line not found (may already be fixed)")
 except Exception as e:
     print(f"  minstrel fix: {e}")
 
