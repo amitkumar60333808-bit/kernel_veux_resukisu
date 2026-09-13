@@ -233,27 +233,32 @@ except Exception as e:
     print(f"  qrtr/tun.c fix skipped: {e}")
 
 # Fix 4: minstrel duplicate symbols
-# rc80211_minstrel.o includes rc80211_minstrel_ht.o via -objs but rc80211_minstrel_ht
-# is also compiled as separate module. Fix: remove rc80211_minstrel_ht from -objs line.
+# Makefile has: rc80211_minstrel-y := rc80211_minstrel.o rc80211_minstrel_ht.o
+# AND mac80211-$(RC_MINSTREL) += $(rc80211_minstrel-y)
+# This compiles same sources twice. Fix: remove rc80211_minstrel_ht.o from -y.
 try:
     with open("net/mac80211/Makefile", "r") as f:
         content = f.read()
     import re
-    # Remove rc80211_minstrel_ht.o from the -objs line only (keep rest of line)
-    pattern = r'(rc80211_minstrel-objs\s*[:?]?=\s*)([^\n]*)'
-    match = re.search(pattern, content)
-    if match:
-        objs_line = match.group(2)
-        new_objs = re.sub(r'\s*rc80211_minstrel_ht\.o', '', objs_line).strip()
-        if new_objs != objs_line.strip():
-            content = content[:match.start(2)] + new_objs + content[match.end(2):]
-            with open("net/mac80211/Makefile", "w") as f:
-                f.write(content)
-            print("  Fixed minstrel: removed rc80211_minstrel_ht.o from -objs")
-        else:
-            print("  minstrel: rc80211_minstrel_ht.o not in -objs line")
+    # Match: rc80211_minstrel-y := \  or  rc80211_minstrel-y := rc80211_minstrel.o \n rc80211_minstrel_ht.o
+    pattern = r'(rc80211_minstrel-y\s*:=\s*\\?\s*\n?\s*rc80211_minstrel\.o\s*\\?\s*\n?\s*)rc80211_minstrel_ht\.o'
+    if re.search(pattern, content):
+        content = re.sub(pattern, r'\1', content)
+        # Also clean up trailing backslash + newline if left dangling
+        content = re.sub(r'(rc80211_minstrel\.o\s*)\\\s*\n\s*\n', r'\1\n', content)
+        with open("net/mac80211/Makefile", "w") as f:
+            f.write(content)
+        print("  Fixed minstrel: removed rc80211_minstrel_ht.o from composite module")
     else:
-        print("  minstrel: rc80211_minstrel-objs pattern not found")
+        print("  minstrel: pattern not matched, trying simpler approach")
+        # Simpler: just remove the whole composite module line
+        content2 = re.sub(r'rc80211_minstrel-y\s*:=.*\\?\s*\n(\s*rc80211_minstrel[^\n]*\n)*', '', content)
+        if content2 != content:
+            with open("net/mac80211/Makefile", "w") as f:
+                f.write(content2)
+            print("  Fixed minstrel: removed entire composite module definition")
+        else:
+            print("  minstrel: could not match any pattern")
 except Exception as e:
     print(f"  minstrel fix: {e}")
 
