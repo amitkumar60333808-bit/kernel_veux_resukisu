@@ -10,8 +10,10 @@ on:
 
 jobs:
   build-kernel:
-    name: Build ReSukiSU Kernel (ZyC-Clang 16)
+    name: Build ReSukiSU Kernel (AOSP clang-r487747c)
     runs-on: ubuntu-22.04
+    env:
+      SKIP_SUSFS: "true"
     steps:
       - name: Install dependencies
         run: |
@@ -43,8 +45,12 @@ jobs:
       - name: Apply SUSFS patches
         run: |
           cd kernel
-          curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/apply_susfs.py" -o apply_susfs.py
-          python3 apply_susfs.py
+          if [ "${SKIP_SUSFS:-false}" = "true" ]; then
+            echo "=== SKIPPING SUSFS (isolation test) ==="
+          else
+            curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/apply_susfs.py" -o apply_susfs.py
+            python3 apply_susfs.py
+          fi
 
       - name: Apply manual hooks and fixes
         run: |
@@ -55,13 +61,17 @@ jobs:
       - name: Configure kernel
         run: |
           cd kernel
-          echo "=== Using FULL stock vendor config (1868 =y) + KSU/SUSFS ==="
+          echo "=== Using FULL stock vendor config (1868 =y) + KSU ==="
           mkdir -p out
           curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/vendor_config.txt" -o out/.config
           echo "Base configs: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
-          if [ -f arch/arm64/configs/vendor/susfs_fragment.config ]; then
-            cat arch/arm64/configs/vendor/susfs_fragment.config >> out/.config
-            echo "  Added SUSFS config fragment"
+          if [ "${SKIP_SUSFS:-false}" != "true" ]; then
+            if [ -f arch/arm64/configs/vendor/susfs_fragment.config ]; then
+              cat arch/arm64/configs/vendor/susfs_fragment.config >> out/.config
+              echo "  Added SUSFS config fragment"
+            fi
+          else
+            echo "  SKIP_SUSFS=true: NOT adding SUSFS configs"
           fi
           echo "CONFIG_KSU=y" >> out/.config
           echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
