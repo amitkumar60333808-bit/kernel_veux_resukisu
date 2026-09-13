@@ -59,6 +59,7 @@ jobs:
           make ARCH=arm64 LLVM=1 O=out olddefconfig
           make ARCH=arm64 LLVM=1 O=out prepare -j$(nproc)
           make ARCH=arm64 LLVM=1 O=out scripts -j$(nproc)
+          sed -i '/#include "ss\/policydb.h"/d' drivers/kernelsu/compat/kernel_compat.h
 
       - name: Build kernel
         run: |
