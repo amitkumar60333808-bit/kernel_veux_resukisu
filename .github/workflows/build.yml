@@ -1,0 +1,35 @@
+name: Build ReSukiSU Kernel for veux (SM6375)
+
+on:
+  workflow_dispatch:
+    inputs:
+      ksu-url:
+        description: 'ReSukiSU fork URL'
+        required: false
+        default: 'https://github.com/ReSukiSU/ReSukiSU'
+
+permissions:
+  contents: write
+
+jobs:
+  build-kernel:
+    name: Build ReSukiSU Kernel
+    runs-on: ubuntu-22.04
+    steps:
+      - name: Build
+        uses: dabao1955/kernel_build_action@main
+        with:
+          kernel-url: https://github.com/crdroidandroid/android_kernel_xiaomi_sm6375
+          kernel-branch: 16.0
+          config: defconfig
+          arch: arm64
+          aosp-clang: true
+          aosp-clang-version: r383902
+          ksu: false
+          ksu-other: true
+          ksu-url: ${{ github.event.inputs.ksu-url || 'https://github.com/ReSukiSU/ReSukiSU' }}
+          anykernel3: true
+          merge-configs: '["arch/arm64/configs/vendor/holi_QGKI.config"]'
+          release: true
+          access-token: ${{ secrets.GITHUB_TOKEN }}
+          extra-make-args: '["LOCALVERSION=-ReSukiSU-veux"]'
