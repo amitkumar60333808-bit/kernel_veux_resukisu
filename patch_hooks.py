@@ -232,15 +232,38 @@ try:
 except Exception as e:
     print(f"  qrtr/tun.c fix skipped: {e}")
 
-# Fix 4: minstrel duplicate symbols - check CONFIG
+# Fix 4: minstrel duplicate symbols - remove from built-in if also module
 try:
     with open("net/mac80211/Makefile", "r") as f:
-        mac80211_makefile = f.read()
-    with open("net/wireless/Makefile", "r") as f:
-        wireless_makefile = f.read()
-    print(f"  mac80211/Makefile has minstrel: {'minstrel' in mac80211_makefile}")
-    print(f"  wireless/Makefile has minstrel: {'minstrel' in wireless_makefile}")
+        lines = f.readlines()
+    fixed = False
+    new_lines = []
+    for line in lines:
+        if "rc80211_minstrel" in line and "obj-" in line:
+            print(f"  Found minstrel Makefile line: {line.strip()}")
+        new_lines.append(line)
+    # Check if CONFIG_MAC80211_MINSTREL is set as built-in (y)
+    with open("out/.config", "r") as f:
+        config = f.read()
+    if "CONFIG_MAC80211_MINSTREL=y" in config or "CONFIG_MAC80211_MINSTREL_HT=y" in config:
+        print("  Minstrel set as built-in, may conflict with module build")
 except Exception as e:
     print(f"  minstrel check: {e}")
+
+# Fix 5: qcom_scm.c redefinition - wrap duplicate init
+try:
+    with open("drivers/firmware/qcom_scm.c", "r") as f:
+        content = f.read()
+    # Check for module_init that conflicts with built-in
+    if "module_init" in content and "core_initcall" in content:
+        print("  qcom_scm.c has both module_init and core_initcall, fixing")
+        content = content.replace(
+            "module_init(qcom_scm_init);",
+            "#ifndef CONFIG_QCOM_SCM\nmodule_init(qcom_scm_init);\n#endif"
+        )
+        with open("drivers/firmware/qcom_scm.c", "w") as f:
+            f.write(content)
+except Exception as e:
+    print(f"  qcom_scm.c fix: {e}")
 
 print("  Done fixing compilation errors")

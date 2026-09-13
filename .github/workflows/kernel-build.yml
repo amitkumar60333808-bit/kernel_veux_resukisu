@@ -45,16 +45,14 @@ jobs:
           make ARCH=arm64 LLVM=1 O=out olddefconfig
           echo "# CONFIG_QCOM_GCC_QCS404 is not set" >> out/.config
           echo "# CONFIG_QRTR_TUN is not set" >> out/.config
-          echo "# CONFIG_MAC80211_LEDS is not set" >> out/.config
-          echo "# CONFIG_MAC80211_DEBUGFS is not set" >> out/.config
-          echo "# CONFIG_MAC80211_MESH is not set" >> out/.config
+          echo "# CONFIG_QCOM_SCM is not set" >> out/.config
           make ARCH=arm64 LLVM=1 O=out olddefconfig
 
       - name: Build kernel
         run: |
           cd kernel
           set +e
-          make ARCH=arm64 LLVM=1 O=out KCFLAGS="-w" -j$(nproc) 2>&1 | tee build.log
+          make ARCH=arm64 LLVM=1 O=out KCFLAGS="-w" LDFLAGS="-Wl,--allow-multiple-definition" -j$(nproc) 2>&1 | tee build.log
           BUILD_RC=${PIPESTATUS[0]}
           echo "Build exit code: $BUILD_RC"
           if [ $BUILD_RC -ne 0 ]; then
