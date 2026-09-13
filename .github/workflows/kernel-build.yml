@@ -42,6 +42,11 @@ jobs:
           echo "CONFIG_KSU=y" >> out/.config
           echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
           echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
+          echo "# CONFIG_QCOM_GCC_QCS404 is not set" >> out/.config
+          echo "# CONFIG_QRTR_TUN is not set" >> out/.config
+          echo "# CONFIG_MAC80211_LEDS is not set" >> out/.config
+          echo "# CONFIG_MAC80211_DEBUGFS is not set" >> out/.config
+          echo "# CONFIG_MAC80211_MESH is not set" >> out/.config
           make ARCH=arm64 LLVM=1 O=out olddefconfig
           echo "=== KSU config ==="
           grep "CONFIG_KSU" out/.config || echo "WARNING: KSU not in config"
@@ -118,4 +123,3 @@ jobs:
             Flash: Extract boot.img, fastboot flash boot boot.img
             Recovery: fastboot flash boot stock_boot.img
           make_latest: true
-# comment
