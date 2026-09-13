@@ -78,6 +78,20 @@ jobs:
           echo "=== Build scripts/prepare ==="
           make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out prepare -j$(nproc)
           make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out scripts -j$(nproc)
+          echo "=== Generate flask.h if needed (SELinux) ==="
+          grep -q "^CONFIG_SECURITY_SELINUX=y" out/.config && \
+            mkdir -p scripts/selinux/genheaders out/scripts/selinux/genheaders out/security/selinux && \
+            (gcc -Iinclude/uapi -Iinclude -Isecurity/selinux/include \
+               -o out/scripts/selinux/genheaders/genheaders \
+               scripts/selinux/genheaders/genheaders.c > /tmp/gcc.log 2>&1 && \
+              out/scripts/selinux/genheaders/genheaders \
+                security/selinux/include/flask.h security/selinux/include/av_permissions.h && \
+              cp security/selinux/include/flask.h security/selinux/flask.h && \
+              cp security/selinux/include/av_permissions.h security/selinux/av_permissions.h && \
+              cp security/selinux/include/flask.h out/security/selinux/flask.h && \
+              cp security/selinux/include/av_permissions.h out/security/selinux/av_permissions.h && \
+              echo "flask.h generated") || \
+            echo "flask.h generation skipped (SELINUX not enabled or gcc failed)"
 
       - name: Build kernel
         run: |
