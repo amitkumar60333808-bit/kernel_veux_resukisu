@@ -1,5 +1,6 @@
-name: Build ReSukiSU Kernel (ZyC-Clang 16)
-# Uses ZyC-Clang 16.0.6 + source defconfig + ReSukiSU/SUSFS
+name: Build ReSukiSU Kernel (AOSP clang-r487747c)
+# Uses exact AOSP clang-r487747c (build 10087095) + full stock vendor config
+# + ReSukiSU (syscall_event_bridge) + SUSFS. No manual ksu_handle_* hooks.
 
 on:
   workflow_dispatch:
