@@ -1,6 +1,6 @@
-name: Build ReSukiSU Kernel (AOSP clang-r487747c)
-# Uses exact AOSP clang-r487747c (build 10087095) + full stock vendor config
-# + ReSukiSU (complete manual hooks) + SUSFS (SUS_SU disabled).
+name: Build ReSukiSU Kernel (Nebula KSU)
+# Uses dev-sm6375 kernel source (Nebula) with KernelSU built-in
+# + SUSFS support.
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
 
 jobs:
   build-kernel:
-    name: Build ReSukiSU Kernel (AOSP clang-r487747c)
+    name: Build ReSukiSU Kernel (Nebula KSU)
     runs-on: ubuntu-22.04
     env:
       SKIP_SUSFS: "true"
@@ -20,13 +20,14 @@ jobs:
           sudo apt-get update -qq
           sudo apt-get install -y bc bison build-essential ccache curl flex g++-multilib git gnupg gperf imagemagick lib32ncurses5-dev lib32readline-dev lib32z1-dev liblz4-tool libncurses5-dev libsdl1.2-dev libssl-dev libxml2 libxml2-utils lzop pngcrush rsync schedtool squashfs-tools xsltproc zip zlib1g-dev unzip python3
 
-      - name: Clone kernel source
+      - name: Clone kernel source (Nebula dev-sm6375, ksu branch)
         run: |
-          git clone --depth=1 --branch 14.0 https://github.com/crdroidandroid/android_kernel_xiaomi_sm6375.git kernel
+          echo "=== Cloning dev-sm6375/kernel_xiaomi_sm6375 (ksu branch) ==="
+          git clone --depth=1 --branch ksu https://github.com/dev-sm6375/kernel_xiaomi_sm6375.git kernel
 
-      - name: Download AOSP clang-r487747c (exact crDroid toolchain)
+      - name: Download AOSP clang-r487747c
         run: |
-          echo "=== Downloading AOSP clang-r487747c (build 10087095, same as stock) ==="
+          echo "=== Downloading AOSP clang-r487747c ==="
           mkdir -p /tmp/toolchain
           curl -sL --max-time 570 "https://android.googlesource.com/platform/prebuilts/clang/host/linux-x86/+archive/fd582b924a40/clang-r487747c.tar.gz" -o /tmp/clang.tar.gz
           ls -la /tmp/clang.tar.gz
@@ -37,34 +38,24 @@ jobs:
           echo "/tmp/toolchain/bin" >> $GITHUB_PATH
           echo "TOOLCHAIN_DIR=/tmp/toolchain" >> $GITHUB_ENV
 
-      - name: Setup ReSukiSU
-        run: |
-          cd kernel
-          curl -LSs "https://raw.githubusercontent.com/ReSukiSU/ReSukiSU/main/kernel/setup.sh" | bash
-
-      - name: Apply SUSFS patches
+      - name: Check for SUSFS support
         run: |
           cd kernel
           if [ "${SKIP_SUSFS:-false}" = "true" ]; then
             echo "=== SKIPPING SUSFS (isolation test) ==="
           else
-            curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/apply_susfs.py" -o apply_susfs.py
-            python3 apply_susfs.py
+            echo "=== Checking SUSFS fragments ==="
+            ls arch/arm64/configs/vendor/susfs_fragment.config 2>/dev/null && echo "SUSFS fragment found" || echo "No SUSFS fragment"
           fi
-
-      - name: Apply manual hooks and fixes
-        run: |
-          cd kernel
-          curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/patch_hooks.py" -o patch_hooks.py
-          python3 patch_hooks.py
 
       - name: Configure kernel
         run: |
           cd kernel
-          echo "=== Using FULL stock vendor config (1868 =y) + KSU ==="
+          echo "=== Using veux-qgki_defconfig (KSU built-in) ==="
           mkdir -p out
-          curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/vendor_config.txt" -o out/.config
-          echo "Base configs: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
+          make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out vendor/veux-qgki_defconfig
+          echo "=== Config stats ==="
+          echo "Configs: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
           if [ "${SKIP_SUSFS:-false}" != "true" ]; then
             if [ -f arch/arm64/configs/vendor/susfs_fragment.config ]; then
               cat arch/arm64/configs/vendor/susfs_fragment.config >> out/.config
@@ -73,30 +64,11 @@ jobs:
           else
             echo "  SKIP_SUSFS=true: NOT adding SUSFS configs"
           fi
-          echo "CONFIG_KSU=y" >> out/.config
-          echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
           echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
-          echo "=== Resolve deps (pass 1) ==="
+          echo "=== Resolve deps ==="
           make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out olddefconfig
           echo "=== Verify critical configs ==="
-          grep -E "^CONFIG_QCOM_SCM=|^CONFIG_QCOM_KGSL=|^CONFIG_SYNC_FILE=|^CONFIG_SECURITY_SELINUX=|^CONFIG_KSU=|^CONFIG_DRM=" out/.config || echo "WARN: some configs missing"
-          echo "=== Build scripts/prepare ==="
-          make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out prepare -j$(nproc)
-          make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out scripts -j$(nproc)
-          echo "=== Generate flask.h if needed (SELinux) ==="
-          grep -q "^CONFIG_SECURITY_SELINUX=y" out/.config && \
-            mkdir -p scripts/selinux/genheaders out/scripts/selinux/genheaders out/security/selinux && \
-            (gcc -Iinclude/uapi -Iinclude -Isecurity/selinux/include \
-               -o out/scripts/selinux/genheaders/genheaders \
-               scripts/selinux/genheaders/genheaders.c > /tmp/gcc.log 2>&1 && \
-              out/scripts/selinux/genheaders/genheaders \
-                security/selinux/include/flask.h security/selinux/include/av_permissions.h && \
-              cp security/selinux/include/flask.h security/selinux/flask.h && \
-              cp security/selinux/include/av_permissions.h security/selinux/av_permissions.h && \
-              cp security/selinux/include/flask.h out/security/selinux/flask.h && \
-              cp security/selinux/include/av_permissions.h out/security/selinux/av_permissions.h && \
-              echo "flask.h generated") || \
-            echo "flask.h generation skipped (SELINUX not enabled or gcc failed)"
+          grep -E "^CONFIG_KSU=|^CONFIG_QCOM_SCM=|^CONFIG_DRM=|^CONFIG_SECURITY_SELINUX=|^CONFIG_BLK_DEV_DM=" out/.config || echo "WARN: some configs missing"
 
       - name: Build kernel
         run: |
