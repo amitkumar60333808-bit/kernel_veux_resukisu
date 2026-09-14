@@ -28,120 +28,27 @@ jobs:
           cd kernel
           CONN_FILE="techpack/display/msm/sde/sde_connector.c"
           echo "=== Patching $CONN_FILE to disable ESD check ==="
-          grep -n "_sde_connector_report_panel_dead" "$CONN_FILE" | head -5
-
-          python3 << 'PYEOF'
-          with open("techpack/display/msm/sde/sde_connector.c", "r") as f:
-              code = f.read()
-
-          # Patch _sde_connector_report_panel_dead to just return
-          old_func = '''void _sde_connector_report_panel_dead(struct sde_connector *conn,
-				      bool skip_pre_kickoff)
-{
-	struct drm_event event;
-
-	if (!conn)
-		return;
-
-	/* Panel dead notification can come:
-	 * 1) ESD thread
-	 * 2) Commit thread (if TE stops coming)
-	 * So such case, avoid failure notification twice.
-	 */
-	if (conn->panel_dead)
-		return;
-
-	SDE_EVT32(SDE_EVTLOG_ERROR);
-	sde_encoder_display_failure_notification(conn->encoder,
-		skip_pre_kickoff);
-
-	conn->panel_dead = true;
-	event.type = DRM_EVENT_PANEL_DEAD;
-	event.length = sizeof(bool);
-	msm_mode_object_event_notify(&conn->base.base,
-		conn->base.dev, &event, (u8 *)&conn->panel_dead);
-	SDE_ERROR("esd check failed report PANEL_DEAD conn_id: %d enc_id: %d\\n",
-			conn->base.base.id, conn->encoder->base.id);
-}'''
-
-          new_func = '''void _sde_connector_report_panel_dead(struct sde_connector *conn,
-				      bool skip_pre_kickoff)
-{
-	return;
-}'''
-
-          if old_func in code:
-              code = code.replace(old_func, new_func)
-              print("Patched _sde_connector_report_panel_dead successfully")
-          else:
-              print("WARN: Could not find exact function match, trying line-by-line")
-              lines = code.split('\n')
-              new_lines = []
-              in_func = False
-              brace_count = 0
-              for i, line in enumerate(lines):
-                  if '_sde_connector_report_panel_dead' in line and 'void' in line:
-                      in_func = True
-                      new_lines.append(line)
-                      continue
-                  if in_func:
-                      if '{' in line:
-                          brace_count += 1
-                      if brace_count > 0:
-                          if brace_count == 1 and '{' in line:
-                              new_lines.append('{')
-                              new_lines.append('\treturn;')
-                              in_func = False
-                              brace_count = 0
-                              continue
-                          brace_count += line.count('}') - line.count('{')
-                          if brace_count <= 0:
-                              new_lines.append('}')
-                              in_func = False
-                          continue
-                  new_lines.append(line)
-              code = '\n'.join(new_lines)
-              print("Patched via line-by-line approach")
-
-          # Patch esd_err_irq_handle to just return IRQ_HANDLED
-          old_irq = '''static irqreturn_t esd_err_irq_handle(int irq, void *data)
-{
-	struct dsi_display *dsi_display;
-	struct sde_connector *conn = data;
-	bool panel_on = true;
-
-	if (!conn || !conn->display) {
-		SDE_ERROR("not able to get connector object\\n");
-		return IRQ_HANDLED;
-	}
-
-	dsi_display = (struct dsi_display *)conn->display;
-	if (dsi_display->panel)
-		panel_on = dsi_display->panel->panel_initialized;
-
-	if (panel_on)
-		_sde_connector_report_panel_dead(conn, false);
-
-	return IRQ_HANDLED;
-}'''
-
-          new_irq = '''static irqreturn_t esd_err_irq_handle(int irq, void *data)
-{
-	return IRQ_HANDLED;
-}'''
-
-          if old_irq in code:
-              code = code.replace(old_irq, new_irq)
-              print("Patched esd_err_irq_handle successfully")
-          else:
-              print("WARN: Could not find esd_err_irq_handle exact match")
-
-          with open("techpack/display/msm/sde/sde_connector.c", "w") as f:
-              f.write(code)
-          PYEOF
-
-          echo "After patching:"
+          echo "Before:"
           grep -n "_sde_connector_report_panel_dead\|esd_err_irq_handle" "$CONN_FILE" | head -10
+
+          echo "=== Patching _sde_connector_report_panel_dead ==="
+          FUNC_LINE=$(grep -n "void _sde_connector_report_panel_dead" "$CONN_FILE" | head -1 | cut -d: -f1)
+          echo "Function declaration at line $FUNC_LINE"
+          BRACE_LINE=$(awk -v start=$FUNC_LINE 'NR>=start && /\{/{print NR; exit}' "$CONN_FILE")
+          echo "Opening brace at line $BRACE_LINE"
+          sed -i "${BRACE_LINE}a\\\\treturn;" "$CONN_FILE"
+          echo "Inserted return; at line $((BRACE_LINE+1))"
+
+          echo "=== Patching esd_err_irq_handle ==="
+          IRQ_LINE=$(grep -n "static irqreturn_t esd_err_irq_handle" "$CONN_FILE" | head -1 | cut -d: -f1)
+          echo "IRQ handler at line $IRQ_LINE"
+          IRQ_BRACE=$(awk -v start=$IRQ_LINE 'NR>=start && /\{/{print NR; exit}' "$CONN_FILE")
+          echo "Opening brace at line $IRQ_BRACE"
+          sed -i "${IRQ_BRACE}a\\\\treturn IRQ_HANDLED;" "$CONN_FILE"
+          echo "Inserted return IRQ_HANDLED; at line $((IRQ_BRACE+1))"
+
+          echo "=== Verify ==="
+          grep -n "_sde_connector_report_panel_dead\|esd_err_irq_handle\|return;" "$CONN_FILE" | head -20
 
       - name: Download AOSP clang-r487747c
         run: |
