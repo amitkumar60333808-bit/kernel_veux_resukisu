@@ -1,6 +1,6 @@
 name: Build ReSukiSU Kernel (Nebula KSU)
 # Uses dev-sm6375 kernel source (Nebula) with KernelSU built-in
-# + SUSFS support.
+# Includes Image + dtbo.img for full device tree overlay support.
 
 on:
   workflow_dispatch:
@@ -70,7 +70,7 @@ jobs:
           echo "=== Verify critical configs ==="
           grep -E "^CONFIG_KSU=|^CONFIG_QCOM_SCM=|^CONFIG_DRM=|^CONFIG_SECURITY_SELINUX=|^CONFIG_BLK_DEV_DM=" out/.config || echo "WARN: some configs missing"
 
-      - name: Build kernel
+      - name: Build kernel + DTBs
         run: |
           cd kernel
           echo "=== Compiler ==="
@@ -84,8 +84,13 @@ jobs:
             grep -iE "error:" build.log | grep -v "warning:" | tail -20
             echo "=== LAST 30 LINES ==="
             tail -30 build.log
+            exit $BUILD_RC
           fi
-          exit $BUILD_RC
+          echo "=== Build DTBs ==="
+          make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out dtbs -j$(nproc) 2>&1 | tee -a build.log
+          DTB_RC=${PIPESTATUS[0]}
+          echo "DTB build exit code: $DTB_RC"
+          exit $DTB_RC
 
       - name: Show build errors
         if: failure()
@@ -96,9 +101,18 @@ jobs:
       - name: Check output
         if: always()
         run: |
+          echo "=== Kernel Image ==="
           ls -la kernel/out/arch/arm64/boot/Image* 2>/dev/null || echo "Image NOT found"
+          echo "=== DTBO files ==="
+          find kernel/out/arch/arm64/boot/dts -name "*.dtbo" 2>/dev/null | head -20
+          echo "=== DTB files ==="
+          find kernel/out/arch/arm64/boot/dts -name "*.dtb" 2>/dev/null | head -20
+          echo "=== dtbo.img ==="
+          ls -la kernel/out/arch/arm64/boot/dtbo.img 2>/dev/null || echo "dtbo.img NOT found"
+          echo "=== dtb.img ==="
+          ls -la kernel/out/arch/arm64/boot/dtb.img 2>/dev/null || echo "dtb.img NOT found"
 
-      - name: Package AnyKernel3
+      - name: Package outputs
         if: success()
         run: |
           cd kernel
@@ -107,23 +121,47 @@ jobs:
             echo "ERROR: No Image found"
             exit 1
           fi
-          echo "Found kernel image: $IMAGE"
-          echo "Image size: $(wc -c < $IMAGE)"
+          echo "Found kernel image: $IMAGE ($(wc -c < $IMAGE) bytes)"
+
           cd ..
+          mkdir -p release
+
+          cp kernel/$IMAGE release/Image
+
+          if [ -f kernel/out/arch/arm64/boot/dtbo.img ]; then
+            cp kernel/out/arch/arm64/boot/dtbo.img release/dtbo.img
+            echo "dtbo.img included ($(wc -c < release/dtbo.img) bytes)"
+          else
+            echo "WARNING: dtbo.img not found, packaging individual dtbos"
+            find kernel/out/arch/arm64/boot/dts -name "veux*.dtbo" -exec cp {} release/ \;
+          fi
+
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
           cd AnyKernel3
           rm -f *.zip
-          cp ../kernel/$IMAGE Image
+          cp ../release/Image Image
+          cp ../release/dtbo.img dtbo.img 2>/dev/null || cp ../release/*.dtbo . 2>/dev/null || true
           sed -i 's/kernel.string=.*/kernel.string=ReSukiSU-veux/' anykernel.sh
           sed -i 's/do.devicecheck=.*/do.devicecheck=1/' anykernel.sh
           sed -i 's/device.name1=.*/device.name1=veux/' anykernel.sh
           sed -i 's/device.name2=.*/device.name2=peux/' anykernel.sh
           zip -r9 ../ReSukiSU-veux.zip . -x ".git*"
 
-      - name: Upload artifact
+          echo "=== Final zip contents ==="
+          unzip -l ../ReSukiSU-veux.zip | grep -E "Image|dtbo|dtb"
+
+      - name: Upload flashable zip
         if: hashFiles('ReSukiSU-veux.zip') != ''
         uses: actions/upload-artifact@v4
         with:
           name: ReSukiSU-kernel-veux
           path: ReSukiSU-veux.zip
+          retention-days: 7
+
+      - name: Upload dtbo.img separately
+        if: hashFiles('kernel/out/arch/arm64/boot/dtbo.img') != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: dtbo-img-veux
+          path: kernel/out/arch/arm64/boot/dtbo.img
           retention-days: 7
