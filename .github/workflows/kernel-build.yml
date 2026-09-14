@@ -23,41 +23,19 @@ jobs:
           echo "=== Cloning dev-sm6375/kernel_xiaomi_sm6375 (ksu branch) ==="
           git clone --depth=1 --branch ksu https://github.com/dev-sm6375/kernel_xiaomi_sm6375.git kernel
 
-      - name: Disable ESD check and fix IBB regulator
+      - name: Disable ESD check in panel DTS
         run: |
           cd kernel
           echo "=== Patching panel DTS: disable ESD check ==="
-
           PANEL_DTS="arch/arm64/boot/dts/vendor/xiaomi/dsi-panel-k6s-38-0c-0a-fhdp-dsc-video.dtsi"
-          DISPLAY_DTS="arch/arm64/boot/dts/vendor/xiaomi/veux-display.dtsi"
-
-          echo "Before (ESD lines in panel DTS):"
-          grep -n "esd" "$PANEL_DTS" || true
-
-          # Remove ESD IRQ GPIO property from panel DTS
+          echo "Before:"
+          grep -n "esd\|disable-esd" "$PANEL_DTS" || true
+          # Remove ESD IRQ GPIO property
           sed -i '/qcom,esd-err-irq-gpio/d' "$PANEL_DTS"
-          # Add explicit disable property
-          if grep -q "qcom,mdss-dsi-disable-esd-check" "$PANEL_DTS"; then
-            echo "ESD disable property already exists"
-          else
-            # Add it inside the qcom,mdss-dsi-panel-timing node, after the existing properties
-            sed -i '/qcom,mdss-dsi-panel-timing/,/^};/{/qcom,mdss-dsi-display-timings;/a\        qcom,mdss-dsi-disable-esd-check;
-}' "$PANEL_DTS"
-          fi
-
-          echo "After (ESD lines in panel DTS):"
-          grep -n "esd" "$PANEL_DTS" || echo "(none - ESD fully removed)"
-
-          # Also patch veux-display.dtsi to remove IBB regulator alias
-          echo "=== Patching display DTS: fix IBB regulator ==="
-          echo "Before IBB in display DTS:"
-          grep -n "display_panel_ibb" "$DISPLAY_DTS" | head -10 || true
-
-          # Comment out the IBB supply property if it references dummy regulator
-          sed -i 's/display_panel_ibb: supplied by regulator-dummy/\/\* display_panel_ibb: supplied by regulator-dummy \*\//' "$DISPLAY_DTS" || true
-
-          echo "After IBB in display DTS:"
-          grep -n "display_panel_ibb" "$DISPLAY_DTS" | head -10 || true
+          # Add ESD disable property using simple sed
+          sed -i '/qcom,mdss-dsi-panel-timing {/a\        qcom,mdss-dsi-disable-esd-check;' "$PANEL_DTS"
+          echo "After:"
+          grep -n "esd\|disable-esd" "$PANEL_DTS" || echo "(no ESD references)"
 
       - name: Download AOSP clang-r487747c
         run: |
