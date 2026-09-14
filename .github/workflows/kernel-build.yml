@@ -1,6 +1,6 @@
-name: Build ReSukiSU Kernel (Nebula KSU)
+name: Build ReSukiSU Kernel (Nebula KSU + Stock Config)
 # Uses dev-sm6375 kernel source (Nebula) with KernelSU built-in
-# Includes Image + dtbo.img for full device tree overlay support.
+# Merges stock vendor_config.txt to ensure all drivers are built-in (=y)
 
 on:
   workflow_dispatch:
@@ -10,10 +10,8 @@ on:
 
 jobs:
   build-kernel:
-    name: Build ReSukiSU Kernel (Nebula KSU)
+    name: Build ReSukiSU Kernel (Nebula KSU + Stock Config)
     runs-on: ubuntu-22.04
-    env:
-      SKIP_SUSFS: "true"
     steps:
       - name: Install dependencies
         run: |
@@ -38,39 +36,42 @@ jobs:
           echo "/tmp/toolchain/bin" >> $GITHUB_PATH
           echo "TOOLCHAIN_DIR=/tmp/toolchain" >> $GITHUB_ENV
 
-      - name: Check for SUSFS support
+      - name: Download stock vendor_config
         run: |
-          cd kernel
-          if [ "${SKIP_SUSFS:-false}" = "true" ]; then
-            echo "=== SKIPPING SUSFS (isolation test) ==="
-          else
-            echo "=== Checking SUSFS fragments ==="
-            ls arch/arm64/configs/vendor/susfs_fragment.config 2>/dev/null && echo "SUSFS fragment found" || echo "No SUSFS fragment"
-          fi
+          echo "=== Downloading stock vendor_config.txt ==="
+          curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/vendor_config.txt" -o vendor_config.txt
+          echo "Stock configs: $(grep -c '=y' vendor_config.txt) =y, $(grep -c '=m' vendor_config.txt) =m"
 
-      - name: Configure kernel
+      - name: Configure kernel (Nebula base + stock override)
         run: |
           cd kernel
-          echo "=== Using veux-qgki_defconfig (KSU built-in) ==="
+          echo "=== Step 1: Generate base config from Nebula defconfig ==="
           mkdir -p out
           make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out vendor/veux-qgki_defconfig
-          echo "=== Config stats ==="
-          echo "Configs: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
-          if [ "${SKIP_SUSFS:-false}" != "true" ]; then
-            if [ -f arch/arm64/configs/vendor/susfs_fragment.config ]; then
-              cat arch/arm64/configs/vendor/susfs_fragment.config >> out/.config
-              echo "  Added SUSFS config fragment"
-            fi
-          else
-            echo "  SKIP_SUSFS=true: NOT adding SUSFS configs"
-          fi
-          echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
-          echo "=== Resolve deps ==="
-          make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out olddefconfig
-          echo "=== Verify critical configs ==="
-          grep -E "^CONFIG_KSU=|^CONFIG_QCOM_SCM=|^CONFIG_DRM=|^CONFIG_SECURITY_SELINUX=|^CONFIG_BLK_DEV_DM=" out/.config || echo "WARN: some configs missing"
+          echo "Nebula base: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
 
-      - name: Build kernel + DTBs
+          echo "=== Step 2: Apply stock vendor_config overrides ==="
+          cp out/.config out/.config.nebula
+          cat ../vendor_config.txt >> out/.config
+          echo "After merge: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
+
+          echo "=== Step 3: Force all =m to =y (built-in) to avoid vendor module mismatch ==="
+          sed -i 's/=m$/=y/' out/.config
+          echo "After force =y: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
+
+          echo "=== Step 4: Ensure KSU and critical configs ==="
+          echo "CONFIG_KSU=y" >> out/.config
+          echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
+          echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
+
+          echo "=== Step 5: Resolve dependencies ==="
+          make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out olddefconfig
+          echo "Final config: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
+
+          echo "=== Step 6: Verify critical configs ==="
+          grep -E "^CONFIG_KSU=|^CONFIG_QCOM_SCM=|^CONFIG_DRM=|^CONFIG_SECURITY_SELINUX=|^CONFIG_BLK_DEV_DM=|^CONFIG_DRM_MIPI_DSI=|^CONFIG_GKI_HIDDEN_DRM_CONFIGS=|^CONFIG_SM_DISPCC" out/.config || echo "WARN: some configs missing"
+
+      - name: Build kernel
         run: |
           cd kernel
           echo "=== Compiler ==="
@@ -81,38 +82,24 @@ jobs:
           echo "Build exit code: $BUILD_RC"
           if [ $BUILD_RC -ne 0 ]; then
             echo "=== BUILD FAILED ==="
-            grep -iE "error:" build.log | grep -v "warning:" | tail -20
+            grep -iE "error:" build.log | grep -v "warning:" | tail -30
             echo "=== LAST 30 LINES ==="
             tail -30 build.log
-            exit $BUILD_RC
           fi
-          echo "=== Build DTBs ==="
-          make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out dtbs -j$(nproc) 2>&1 | tee -a build.log
-          DTB_RC=${PIPESTATUS[0]}
-          echo "DTB build exit code: $DTB_RC"
-          exit $DTB_RC
+          exit $BUILD_RC
 
       - name: Show build errors
         if: failure()
         run: |
           cd kernel
-          grep -iE "error:" build.log | grep -v "warning:" | tail -20
+          grep -iE "error:" build.log | grep -v "warning:" | tail -30
 
       - name: Check output
         if: always()
         run: |
-          echo "=== Kernel Image ==="
           ls -la kernel/out/arch/arm64/boot/Image* 2>/dev/null || echo "Image NOT found"
-          echo "=== DTBO files ==="
-          find kernel/out/arch/arm64/boot/dts -name "*.dtbo" 2>/dev/null | head -20
-          echo "=== DTB files ==="
-          find kernel/out/arch/arm64/boot/dts -name "*.dtb" 2>/dev/null | head -20
-          echo "=== dtbo.img ==="
-          ls -la kernel/out/arch/arm64/boot/dtbo.img 2>/dev/null || echo "dtbo.img NOT found"
-          echo "=== dtb.img ==="
-          ls -la kernel/out/arch/arm64/boot/dtb.img 2>/dev/null || echo "dtb.img NOT found"
 
-      - name: Package outputs
+      - name: Package AnyKernel3
         if: success()
         run: |
           cd kernel
@@ -122,46 +109,21 @@ jobs:
             exit 1
           fi
           echo "Found kernel image: $IMAGE ($(wc -c < $IMAGE) bytes)"
-
           cd ..
-          mkdir -p release
-
-          cp kernel/$IMAGE release/Image
-
-          if [ -f kernel/out/arch/arm64/boot/dtbo.img ]; then
-            cp kernel/out/arch/arm64/boot/dtbo.img release/dtbo.img
-            echo "dtbo.img included ($(wc -c < release/dtbo.img) bytes)"
-          else
-            echo "WARNING: dtbo.img not found, packaging individual dtbos"
-            find kernel/out/arch/arm64/boot/dts -name "veux*.dtbo" -exec cp {} release/ \;
-          fi
-
           git clone --depth=1 https://github.com/osm0sis/AnyKernel3.git
           cd AnyKernel3
           rm -f *.zip
-          cp ../release/Image Image
-          cp ../release/dtbo.img dtbo.img 2>/dev/null || cp ../release/*.dtbo . 2>/dev/null || true
+          cp ../kernel/$IMAGE Image
           sed -i 's/kernel.string=.*/kernel.string=ReSukiSU-veux/' anykernel.sh
           sed -i 's/do.devicecheck=.*/do.devicecheck=1/' anykernel.sh
           sed -i 's/device.name1=.*/device.name1=veux/' anykernel.sh
           sed -i 's/device.name2=.*/device.name2=peux/' anykernel.sh
           zip -r9 ../ReSukiSU-veux.zip . -x ".git*"
 
-          echo "=== Final zip contents ==="
-          unzip -l ../ReSukiSU-veux.zip | grep -E "Image|dtbo|dtb"
-
-      - name: Upload flashable zip
+      - name: Upload artifact
         if: hashFiles('ReSukiSU-veux.zip') != ''
         uses: actions/upload-artifact@v4
         with:
           name: ReSukiSU-kernel-veux
           path: ReSukiSU-veux.zip
-          retention-days: 7
-
-      - name: Upload dtbo.img separately
-        if: hashFiles('kernel/out/arch/arm64/boot/dtbo.img') != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: dtbo-img-veux
-          path: kernel/out/arch/arm64/boot/dtbo.img
           retention-days: 7
