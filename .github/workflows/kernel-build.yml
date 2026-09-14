@@ -1,6 +1,6 @@
-name: Build ReSukiSU Kernel (Nebula KSU + Stock Config)
+name: Build ReSukiSU Kernel (Nebula KSU + Display Fix)
 # Uses dev-sm6375 kernel source (Nebula) with KernelSU built-in
-# Merges stock vendor_config.txt to ensure all drivers are built-in (=y)
+# Forces display/DRM modules to built-in (=y) for vendor module compat
 
 on:
   workflow_dispatch:
@@ -10,7 +10,7 @@ on:
 
 jobs:
   build-kernel:
-    name: Build ReSukiSU Kernel (Nebula KSU + Stock Config)
+    name: Build ReSukiSU Kernel (Nebula KSU + Display Fix)
     runs-on: ubuntu-22.04
     steps:
       - name: Install dependencies
@@ -36,40 +36,50 @@ jobs:
           echo "/tmp/toolchain/bin" >> $GITHUB_PATH
           echo "TOOLCHAIN_DIR=/tmp/toolchain" >> $GITHUB_ENV
 
-      - name: Download stock vendor_config
-        run: |
-          echo "=== Downloading stock vendor_config.txt ==="
-          curl -LSs "https://raw.githubusercontent.com/amitkumar60333808-bit/kernel_veux_resukisu/main/vendor_config.txt" -o vendor_config.txt
-          echo "Stock configs: $(grep -c '=y' vendor_config.txt) =y, $(grep -c '=m' vendor_config.txt) =m"
-
-      - name: Configure kernel (Nebula base + stock override)
+      - name: Configure kernel
         run: |
           cd kernel
-          echo "=== Step 1: Generate base config from Nebula defconfig ==="
+          echo "=== Using veux-qgki_defconfig (KSU built-in) ==="
           mkdir -p out
           make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out vendor/veux-qgki_defconfig
-          echo "Nebula base: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
 
-          echo "=== Step 2: Apply stock vendor_config overrides ==="
-          cp out/.config out/.config.nebula
-          cat ../vendor_config.txt >> out/.config
-          echo "After merge: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
+          echo "=== Forcing display/DRM/SND modules to built-in (=y) ==="
+          sed -i 's/^\(CONFIG_DRM.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_SND.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_SND_SOC.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_SPI.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_I2C.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_USB.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_MMC.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_INPUT.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_HID.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_BT.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_CFG80211\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_MAC80211\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_WLAN.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_SC.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_FINGERPRINT.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_LEDS.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_REGULATOR.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_GPIO.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_PINCTRL.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_POWER.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_RTC.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_SENSORS.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_MEDIA.*\)=m$/\1=y/' out/.config
+          sed -i 's/^\(CONFIG_VIDEO.*\)=m$/\1=y/' out/.config
 
-          echo "=== Step 3: Force all =m to =y (built-in) to avoid vendor module mismatch ==="
-          sed -i 's/=m$/=y/' out/.config
-          echo "After force =y: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
-
-          echo "=== Step 4: Ensure KSU and critical configs ==="
+          echo "=== Ensure KSU and display configs ==="
           echo "CONFIG_KSU=y" >> out/.config
           echo "CONFIG_KSU_MANUAL_HOOK=y" >> out/.config
           echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
 
-          echo "=== Step 5: Resolve dependencies ==="
+          echo "=== Resolve deps ==="
           make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out olddefconfig
-          echo "Final config: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
+          echo "Final: $(grep -c '=y' out/.config) =y, $(grep -c '=m' out/.config) =m"
 
-          echo "=== Step 6: Verify critical configs ==="
-          grep -E "^CONFIG_KSU=|^CONFIG_QCOM_SCM=|^CONFIG_DRM=|^CONFIG_SECURITY_SELINUX=|^CONFIG_BLK_DEV_DM=|^CONFIG_DRM_MIPI_DSI=|^CONFIG_GKI_HIDDEN_DRM_CONFIGS=|^CONFIG_SM_DISPCC" out/.config || echo "WARN: some configs missing"
+          echo "=== Verify critical configs ==="
+          grep -E "^CONFIG_KSU=|^CONFIG_DRM=|^CONFIG_DRM_MIPI_DSI=|^CONFIG_GKI_HIDDEN_DRM_CONFIGS=|^CONFIG_SECURITY_SELINUX=|^CONFIG_BLK_DEV_DM=" out/.config || echo "WARN: some configs missing"
 
       - name: Build kernel
         run: |
