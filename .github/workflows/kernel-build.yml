@@ -26,15 +26,22 @@ jobs:
       - name: Integrate KernelSU v0.9.5 (non-GKI 5.4 kernel support)
         run: |
           cd kernel
-          echo "=== Running KernelSU setup.sh v0.9.5 ==="
-          echo "This adds drivers/kernelsu source, Kconfig entry, and Makefile entry"
-          curl -LSs "https://raw.githubusercontent.com/tiann/KernelSU/main/kernel/setup.sh" | bash -s v0.9.5
-          echo "=== Verify KernelSU integration ==="
+          echo "=== Cloning KernelSU repo (v0.9.5) ==="
+          rm -rf KernelSU
+          git clone --depth=1 --branch v0.9.5 https://github.com/tiann/KernelSU.git KernelSU
+          echo "=== Creating drivers/kernelsu symlink ==="
+          ln -sf "$(realpath --relative-to="drivers" "KernelSU/kernel")" "drivers/kernelsu"
+          echo "=== Adding Makefile entry ==="
+          echo "" >> drivers/Makefile
+          echo 'obj-$(CONFIG_KSU) += kernelsu/' >> drivers/Makefile
+          echo "=== Adding Kconfig entry ==="
+          echo "" >> drivers/Kconfig
+          echo 'source "drivers/kernelsu/Kconfig"' >> drivers/Kconfig
+          echo "=== Verify ==="
           ls -la drivers/kernelsu/ || echo "ERROR: kernelsu symlink missing"
           ls -la KernelSU/kernel/ || echo "ERROR: KernelSU source missing"
           grep "kernelsu" drivers/Makefile || echo "ERROR: Makefile entry missing"
           grep "kernelsu" drivers/Kconfig || echo "ERROR: Kconfig entry missing"
-          echo "=== KernelSU Kconfig ==="
           cat drivers/kernelsu/Kconfig 2>/dev/null | head -30 || echo "ERROR: Kconfig not found"
 
       - name: Disable ESD check in kernel source
@@ -110,7 +117,11 @@ jobs:
           sed -i 's/^\(CONFIG_MEDIA.*\)=m$/\1=y/' out/.config
           sed -i 's/^\(CONFIG_VIDEO.*\)=m$/\1=y/' out/.config
 
-          echo "=== Ensure KSU and display configs ==="
+          echo "=== Ensure KSU and dependencies ==="
+          echo "CONFIG_OVERLAY_FS=y" >> out/.config
+          echo "CONFIG_KPROBES=y" >> out/.config
+          echo "CONFIG_HAVE_KPROBES=y" >> out/.config
+          echo "CONFIG_KPROBE_EVENTS=y" >> out/.config
           echo "CONFIG_KSU=y" >> out/.config
           echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
 
@@ -120,8 +131,8 @@ jobs:
 
           echo "=== Verify critical configs ==="
           grep -E "^CONFIG_KSU=|^CONFIG_DRM=|^CONFIG_DRM_MIPI_DSI=|^CONFIG_GKI_HIDDEN_DRM_CONFIGS=|^CONFIG_SECURITY_SELINUX=|^CONFIG_BLK_DEV_DM=" out/.config || echo "WARN: some configs missing"
-          echo "=== KSU config check ==="
-          grep "^CONFIG_KSU" out/.config || echo "ERROR: CONFIG_KSU missing after olddefconfig!"
+          echo "=== KSU verification ==="
+          grep "^CONFIG_KSU" out/.config || (echo "ERROR: CONFIG_KSU missing! Re-adding and re-running olddefconfig..." && echo "CONFIG_KSU=y" >> out/.config && make ARCH=arm64 LLVM=1 CC=clang CLANG_TRIPLE=aarch64-linux-gnu- HOSTCC=gcc HOSTCXX=g++ O=out olddefconfig && grep "^CONFIG_KSU" out/.config)
 
       - name: Build kernel
         run: |
