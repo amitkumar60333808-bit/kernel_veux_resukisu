@@ -23,19 +23,44 @@ jobs:
           echo "=== Cloning dev-sm6375/kernel_xiaomi_sm6375 (ksu branch) ==="
           git clone --depth=1 --branch ksu https://github.com/dev-sm6375/kernel_xiaomi_sm6375.git kernel
 
-      - name: Disable ESD check in panel DTS
+      - name: Disable ESD check in kernel source
         run: |
           cd kernel
-          echo "=== Patching panel DTS: disable ESD check ==="
-          PANEL_DTS="arch/arm64/boot/dts/vendor/xiaomi/dsi-panel-k6s-38-0c-0a-fhdp-dsc-video.dtsi"
+          CONN_FILE="techpack/display/msm/sde/sde_connector.c"
+          echo "=== Patching $CONN_FILE to disable ESD check ==="
           echo "Before:"
-          grep -n "esd\|disable-esd" "$PANEL_DTS" || true
-          # Remove ESD IRQ GPIO property
-          sed -i '/qcom,esd-err-irq-gpio/d' "$PANEL_DTS"
-          # Add ESD disable property using simple sed
-          sed -i '/qcom,mdss-dsi-panel-timing {/a\        qcom,mdss-dsi-disable-esd-check;' "$PANEL_DTS"
+          grep -n "_sde_connector_report_panel_dead" "$CONN_FILE" | head -5
+          grep -n "esd_err_irq_handle" "$CONN_FILE" | head -5
+
+          python3 -c "
+          import re
+          with open('$CONN_FILE', 'r') as f:
+              code = f.read()
+
+          # Replace _sde_connector_report_panel_dead with no-op
+          pattern = r'(void _sde_connector_report_panel_dead\(struct sde_connector \*conn, bool overridden\)\s*\{)(.*?)(\n\})'
+          replacement = r'\1\n\treturn;\2\3'
+          code_new = re.sub(pattern, replacement, code, flags=re.DOTALL)
+          if code_new != code:
+              print('Patched _sde_connector_report_panel_dead')
+          else:
+              print('WARN: Could not patch _sde_connector_report_panel_dead')
+
+          # Replace esd_err_irq_handle with no-op
+          pattern2 = r'(static irqreturn_t esd_err_irq_handle\(int irq, void \*data\)\s*\{)(.*?)(\n\})'
+          replacement2 = r'\1\n\treturn IRQ_HANDLED;\2\3'
+          code_new2 = re.sub(pattern2, replacement2, code_new, flags=re.DOTALL)
+          if code_new2 != code_new:
+              print('Patched esd_err_irq_handle')
+          else:
+              print('WARN: Could not patch esd_err_irq_handle')
+
+          with open('$CONN_FILE', 'w') as f:
+              f.write(code_new2)
+          "
+
           echo "After:"
-          grep -n "esd\|disable-esd" "$PANEL_DTS" || echo "(no ESD references)"
+          grep -n "_sde_connector_report_panel_dead\|esd_err_irq_handle" "$CONN_FILE" | head -10
 
       - name: Download AOSP clang-r487747c
         run: |
