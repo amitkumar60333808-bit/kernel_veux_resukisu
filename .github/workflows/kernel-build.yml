@@ -122,7 +122,9 @@ jobs:
           echo "CONFIG_KPROBES=y" >> out/.config
           echo "CONFIG_HAVE_KPROBES=y" >> out/.config
           echo "CONFIG_KPROBE_EVENTS=y" >> out/.config
+          echo "CONFIG_KPROBES_QGKI=n" >> out/.config
           echo "CONFIG_KSU=y" >> out/.config
+          echo "CONFIG_MODULES=y" >> out/.config
           echo "CONFIG_LOCALVERSION=-ReSukiSU-veux" >> out/.config
 
           echo "=== Resolve deps ==="
